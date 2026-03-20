@@ -185,3 +185,46 @@ def transform_vector(req: TransformVectorRequest):
         return {"job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/layers/{clerk_id}")
+def get_layers(clerk_id: str):
+    """Returns all map-ready layers for a user (images + vectors that are ready)"""
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        return {"layers": []}
+
+    geoserver_url = os.getenv(
+        "GEOSERVER_URL",
+        "https://timbermap-geoserver-788407107542.us-central1.run.app/geoserver"
+    )
+    workspace = "timbermap"
+
+    images = get_images(user_id)
+    vectors = get_vectors(user_id)
+
+    layers = []
+
+    for img in images:
+        if img.get("status") == "ready" and img.get("geoserver_layer"):
+            layers.append({
+                "id": img["id"],
+                "name": img["filename"],
+                "type": "raster",
+                "layer": img["geoserver_layer"],
+                "wms_url": f"{geoserver_url}/{workspace}/wms",
+                "epsg": img.get("epsg"),
+            })
+
+    for vec in vectors:
+        if vec.get("status") == "ready" and vec.get("geoserver_layer"):
+            layers.append({
+                "id": vec["id"],
+                "name": vec["filename"],
+                "type": "vector",
+                "layer": vec["geoserver_layer"],
+                "wms_url": f"{geoserver_url}/{workspace}/wms",
+                "epsg": vec.get("epsg"),
+            })
+
+    return {"layers": layers}

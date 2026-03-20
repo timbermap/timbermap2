@@ -446,6 +446,28 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.8)", "htt
 standard-no-fastapi-cloud-cli = ["email-validator (>=2.0.0)", "fastapi-cli[standard-no-fastapi-cloud-cli] (>=0.0.8)", "httpx (>=0.23.0,<1.0.0)", "jinja2 (>=3.1.5)", "pydantic-extra-types (>=2.0.0)", "pydantic-settings (>=2.0.0)", "python-multipart (>=0.0.18)", "uvicorn[standard] (>=0.12.0)"]
 
 [[package]]
+name = "geoserver-rest"
+version = "2.10.0"
+description = "Package for GeoServer rest API"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "geoserver_rest-2.10.0-py3-none-any.whl", hash = "sha256:025ccd63e1e9beba6fec4f3bf587593607c9ec68c5cffbd56a0e9bde9018b31a"},
+    {file = "geoserver_rest-2.10.0.tar.gz", hash = "sha256:117f582fbdb1e7f4babb87a5f186c5fa38c906809e41dab6030aa655178f3c5f"},
+]
+
+[package.dependencies]
+pygments = "*"
+requests = "*"
+xmltodict = "*"
+
+[package.extras]
+all = ["gdal", "matplotlib", "seaborn"]
+dev = ["black", "flake8", "pre-commit", "pytest", "sphinx (>=1.7)"]
+style = ["gdal", "matplotlib", "seaborn"]
+
+[[package]]
 name = "google-api-core"
 version = "2.30.0"
 description = "Google API client core library"
@@ -1241,6 +1263,21 @@ files = [
 typing-extensions = ">=4.14.1"
 
 [[package]]
+name = "pygments"
+version = "2.19.2"
+description = "Pygments is a syntax highlighting package written in Python."
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b"},
+    {file = "pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887"},
+]
+
+[package.extras]
+windows-terminal = ["colorama (>=0.4.6)"]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 description = "Extensions to the standard Python datetime module"
@@ -1656,7 +1693,22 @@ files = [
 [package.extras]
 dev = ["pytest", "setuptools"]
 
+[[package]]
+name = "xmltodict"
+version = "1.0.4"
+description = "Makes working with XML feel like you are working with JSON"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "xmltodict-1.0.4-py3-none-any.whl", hash = "sha256:a4a00d300b0e1c59fc2bfccb53d7b2e88c32f200df138a0dd2229f842497026a"},
+    {file = "xmltodict-1.0.4.tar.gz", hash = "sha256:6d94c9f834dd9e44514162799d344d815a3a4faec913717a9ecbfa5be1bb8e61"},
+]
+
+[package.extras]
+test = ["pytest", "pytest-cov"]
+
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "a83ac50ccc2398124222663b1d8f544c770b5fc0925124760215ab1774e78f42"
+content-hash = "9e4760de27ce413ee5c2e3767c4d923954b6fcb70a4c12819d441c1400358bd4"

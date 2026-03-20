@@ -1,6 +1,7 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Spinner from '@/components/Spinner'
 
 type ImageFile = {
   id: string
@@ -30,6 +31,7 @@ export default function ImagesPage() {
   const { user } = useUser()
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [images, setImages] = useState<ImageFile[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showTransform, setShowTransform] = useState(false)
   const [transforming, setTransforming] = useState(false)
@@ -44,6 +46,7 @@ export default function ImagesPage() {
     const res = await fetch(`${API}/images/${user.id}`)
     const data = await res.json()
     setImages(data.images || [])
+    setLoading(false)
   }, [user, API])
 
   useEffect(() => {
@@ -52,12 +55,9 @@ export default function ImagesPage() {
 
   async function uploadSingle(item: UploadItem, index: number) {
     if (!user) return
-
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
-
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
-
     try {
       const res = await fetch(`${API}/upload/signed-url`, {
         method: 'POST',
@@ -73,9 +73,7 @@ export default function ImagesPage() {
         }),
       })
       const { url, gcs_path } = await res.json()
-
       updateItem({ message: 'Uploading...' })
-
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.upload.onprogress = (e) => {
@@ -88,9 +86,7 @@ export default function ImagesPage() {
         xhr.setRequestHeader('Content-Type', item.file.type || 'image/tiff')
         xhr.send(item.file)
       })
-
       updateItem({ message: 'Saving...' })
-
       await fetch(`${API}/upload/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,7 +98,6 @@ export default function ImagesPage() {
           file_type: 'raster',
         }),
       })
-
       updateItem({ status: 'done', progress: 100, message: 'Done' })
     } catch (err) {
       updateItem({ status: 'error', message: 'Failed: ' + String(err) })
@@ -112,16 +107,12 @@ export default function ImagesPage() {
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-
     const items: UploadItem[] = files.map(f => ({
       file: f, progress: 0, status: 'waiting', message: 'Waiting...'
     }))
     setUploads(items)
-
-    // Upload all files concurrently
     await Promise.all(items.map((item, i) => uploadSingle(item, i)))
     await fetchImages()
-
     setTimeout(() => setUploads([]), 3000)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -185,17 +176,9 @@ export default function ImagesPage() {
         >
           + Upload images
         </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".tif,.tiff"
-          multiple
-          className="hidden"
-          onChange={handleFiles}
-        />
+        <input ref={fileRef} type="file" accept=".tif,.tiff" multiple className="hidden" onChange={handleFiles} />
       </div>
 
-      {/* Upload progress */}
       {uploads.length > 0 && (
         <div className="mb-5 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-50">
@@ -211,10 +194,8 @@ export default function ImagesPage() {
                   <span className="text-xs text-gray-400">{u.message}</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-1">
-                  <div
-                    className={`h-1 rounded-full transition-all duration-300 ${uploadColor[u.status]}`}
-                    style={{ width: `${u.progress}%` }}
-                  />
+                  <div className={`h-1 rounded-full transition-all duration-300 ${uploadColor[u.status]}`}
+                    style={{ width: `${u.progress}%` }} />
                 </div>
               </div>
             ))}
@@ -222,7 +203,6 @@ export default function ImagesPage() {
         </div>
       )}
 
-      {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
@@ -230,52 +210,36 @@ export default function ImagesPage() {
             <p className="text-sm text-gray-400 mb-5">Leave fields blank to keep existing values</p>
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">
-                  Reproject to EPSG
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 4326 or 32718"
+                <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Reproject to EPSG</label>
+                <input type="text" placeholder="e.g. 4326 or 32718"
                   value={transform.new_epsg}
                   onChange={e => setTransform(t => ({...t, new_epsg: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]"
-                />
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution X (m)</label>
-                  <input
-                    type="number"
-                    placeholder="e.g. 0.5"
+                  <input type="number" placeholder="e.g. 0.5"
                     value={transform.new_resolution_x}
                     onChange={e => setTransform(t => ({...t, new_resolution_x: e.target.value}))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]"
-                  />
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution Y (m)</label>
-                  <input
-                    type="number"
-                    placeholder="e.g. 0.5"
+                  <input type="number" placeholder="e.g. 0.5"
                     value={transform.new_resolution_y}
                     onChange={e => setTransform(t => ({...t, new_resolution_y: e.target.value}))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]"
-                  />
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={handleTransform}
-                disabled={transforming}
-                className="flex-1 bg-[#2C5F45] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors disabled:opacity-50"
-              >
+              <button onClick={handleTransform} disabled={transforming}
+                className="flex-1 bg-[#2C5F45] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors disabled:opacity-50">
                 {transforming ? 'Queuing...' : 'Run transform'}
               </button>
-              <button
-                onClick={() => { setShowTransform(false); setSelectedId(null) }}
-                className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => { setShowTransform(false); setSelectedId(null) }}
+                className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
             </div>
@@ -283,11 +247,11 @@ export default function ImagesPage() {
         </div>
       )}
 
-      {images.length === 0 && uploads.length === 0 ? (
-        <div
-          className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-16 text-center cursor-pointer hover:border-[#5A9E7C] transition-colors"
-          onClick={() => fileRef.current?.click()}
-        >
+      {loading ? (
+        <Spinner text="Loading images..." />
+      ) : images.length === 0 && uploads.length === 0 ? (
+        <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-16 text-center cursor-pointer hover:border-[#5A9E7C] transition-colors"
+          onClick={() => fileRef.current?.click()}>
           <div className="w-10 h-10 rounded-full bg-[#EDF4F0] flex items-center justify-center mx-auto mb-3">
             <span className="text-[#2C5F45] text-lg">+</span>
           </div>
@@ -323,12 +287,8 @@ export default function ImagesPage() {
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
-                        className="text-xs text-[#2C5F45] hover:underline font-medium"
-                      >
-                        Transform
-                      </button>
+                      <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
+                        className="text-xs text-[#2C5F45] hover:underline font-medium">Transform</button>
                       <button className="text-xs text-gray-400 hover:underline">View</button>
                     </div>
                   </td>

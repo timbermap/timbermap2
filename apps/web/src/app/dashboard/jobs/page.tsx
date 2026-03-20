@@ -1,6 +1,7 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
 import { useState, useEffect, useCallback } from 'react'
+import Spinner from '@/components/Spinner'
 
 type Job = {
   id: string
@@ -14,10 +15,10 @@ type Job = {
 }
 
 const statusColor: Record<string, string> = {
-  queued:     'bg-gray-100 text-gray-600',
-  running:    'bg-blue-50 text-blue-700',
-  done:       'bg-green-50 text-green-700',
-  failed:     'bg-red-50 text-red-700',
+  queued:  'bg-gray-100 text-gray-600',
+  running: 'bg-blue-50 text-blue-700',
+  done:    'bg-green-50 text-green-700',
+  failed:  'bg-red-50 text-red-700',
 }
 
 const typeLabel: Record<string, string> = {
@@ -69,18 +70,14 @@ export default function JobsPage() {
           <h1 className="text-2xl font-semibold text-[#1C1C1C]">Jobs</h1>
           <p className="text-gray-400 mt-1 text-sm">All background processing tasks — refreshes every 5 seconds</p>
         </div>
-        <button
-          onClick={fetchJobs}
-          className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-        >
+        <button onClick={fetchJobs}
+          className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
           Refresh
         </button>
       </div>
 
       {loading ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-16 text-center">
-          <p className="text-gray-300 text-sm">Loading jobs...</p>
-        </div>
+        <Spinner text="Loading jobs..." />
       ) : jobs.length === 0 ? (
         <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-16 text-center">
           <p className="text-gray-400 text-sm">No jobs yet</p>
@@ -102,9 +99,7 @@ export default function JobsPage() {
             <tbody>
               {jobs.map(job => (
                 <tr key={job.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-3.5 text-gray-900 font-medium">
-                    {typeLabel[job.type] || job.type}
-                  </td>
+                  <td className="px-5 py-3.5 text-gray-900 font-medium">{typeLabel[job.type] || job.type}</td>
                   <td className="px-5 py-3.5 text-gray-500 text-xs">
                     {job.input_ref?.filename as string || job.input_ref?.gcs_path as string || '—'}
                   </td>
