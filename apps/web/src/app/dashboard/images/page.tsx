@@ -39,7 +39,7 @@ export default function ImagesPage() {
     new_epsg: '', new_resolution_x: '', new_resolution_y: ''
   })
   const fileRef = useRef<HTMLInputElement>(null)
-  const API = process.env.NEXT_PUBLIC_API_URL
+  const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchImages = useCallback(async () => {
     if (!user) return

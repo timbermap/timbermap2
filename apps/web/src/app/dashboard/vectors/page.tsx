@@ -31,7 +31,7 @@ export default function VectorsPage() {
   const [transforming, setTransforming] = useState(false)
   const [newEpsg, setNewEpsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const API = process.env.NEXT_PUBLIC_API_URL
+  const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchVectors = useCallback(async () => {
     if (!user) return

@@ -34,7 +34,7 @@ export default function JobsPage() {
   const { user } = useUser()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
-  const API = process.env.NEXT_PUBLIC_API_URL
+  const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchJobs = useCallback(async () => {
     if (!user) return

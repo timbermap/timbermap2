@@ -63,7 +63,7 @@ export default function MapPage() {
   const [layers, setLayers] = useState<Layer[]>([])
   const [basemap, setBasemap] = useState('satellite')
   const [mapReady, setMapReady] = useState(false)
-  const API = process.env.NEXT_PUBLIC_API_URL
+  const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchLayers = useCallback(async () => {
     if (!user) return
