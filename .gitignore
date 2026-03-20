@@ -7,3 +7,4 @@ node_modules/
 .DS_Store
 service-account.json
 apps/api/.env
+maquina.txt
