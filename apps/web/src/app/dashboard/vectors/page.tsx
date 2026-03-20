@@ -39,10 +39,10 @@ export default function VectorsPage() {
     const data = await res.json()
     setVectors(data.vectors || [])
     setLoading(false)
-  }, [user, API])
+  }, [user, isLoaded, API])
 
   useEffect(() => {
-    if (user) fetchVectors()
+    if (isLoaded && user) fetchVectors()
   }, [user, fetchVectors])
 
   async function uploadSingle(item: UploadItem, index: number) {

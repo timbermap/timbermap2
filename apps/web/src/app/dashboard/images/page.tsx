@@ -47,10 +47,10 @@ export default function ImagesPage() {
     const data = await res.json()
     setImages(data.images || [])
     setLoading(false)
-  }, [user, API])
+  }, [user, isLoaded, API])
 
   useEffect(() => {
-    if (user) fetchImages()
+    if (isLoaded && user) fetchImages()
   }, [user, fetchImages])
 
   async function uploadSingle(item: UploadItem, index: number) {

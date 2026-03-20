@@ -42,7 +42,7 @@ export default function JobsPage() {
     const data = await res.json()
     setJobs(data.jobs || [])
     setLoading(false)
-  }, [user, API])
+  }, [user, isLoaded, API])
 
   useEffect(() => {
     fetchJobs()
