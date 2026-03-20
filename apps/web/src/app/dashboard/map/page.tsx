@@ -223,7 +223,7 @@ export default function MapPage() {
         area_km2: calcAreaKm2(coords),
       })
       // Exit draw mode after drawing
-      draw.current.changeMode('simple_select')
+      setTimeout(() => draw.current.changeMode('simple_select'), 0)
       setDrawMode(false)
     })
 
@@ -369,7 +369,7 @@ export default function MapPage() {
   function toggleDrawMode() {
     if (!draw.current) return
     if (drawMode) {
-      draw.current.changeMode('simple_select')
+      setTimeout(() => draw.current.changeMode('simple_select'), 0)
       setDrawMode(false)
     } else {
       // Clear existing AOI before drawing new one
