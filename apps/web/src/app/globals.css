@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+:root {
+  --brand-green: #2C5F45;
+  --brand-green-dark: #1F4332;
+  --brand-green-light: #EDF4F0;
+  --brand-accent: #5A9E7C;
+  --brand-text: #1C1C1C;
+}
+
+body {
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--brand-text);
+  background: #F7F8F6;
+}
