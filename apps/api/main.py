@@ -14,6 +14,7 @@ from database import (
     get_images, get_vectors, get_jobs,
     insert_job
 )
+from tasks import enqueue_raster_ingest, enqueue_vector_ingest
 
 load_dotenv()
 
@@ -32,8 +33,6 @@ app.add_middleware(
 )
 
 app.include_router(webhook_router)
-
-# ── Models ────────────────────────────────────────────────
 
 class SignedUrlRequest(BaseModel):
     filename: str
@@ -63,20 +62,14 @@ class TransformVectorRequest(BaseModel):
     vector_id: str
     new_epsg: str
 
-# ── Health ────────────────────────────────────────────────
-
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "timbermap-api"}
 
-# ── Upload ────────────────────────────────────────────────
-
 @app.post("/upload/signed-url")
 def get_signed_url(req: SignedUrlRequest):
     try:
-        # Auto-provision user on first upload
         ensure_user(req.clerk_id, req.email, req.username)
-
         client = storage.Client()
         bucket = client.bucket(os.getenv("GCS_BUCKET"))
         folder = "rasters" if req.file_type == "raster" else "vectors"
@@ -108,6 +101,9 @@ def confirm_upload(req: ConfirmUploadRequest):
                 "gcs_path": req.gcs_path,
                 "filename": req.filename
             })
+            enqueue_raster_ingest(
+                str(job_id), str(file_id), req.gcs_path, req.filename
+            )
         else:
             file_id = insert_vector(user_id, req.filename, req.gcs_path, req.filesize)
             job_id = insert_job(user_id, "vector_ingest", {
@@ -115,12 +111,13 @@ def confirm_upload(req: ConfirmUploadRequest):
                 "gcs_path": req.gcs_path,
                 "filename": req.filename
             })
+            enqueue_vector_ingest(
+                str(job_id), str(file_id), req.gcs_path, req.filename
+            )
 
         return {"file_id": str(file_id), "job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# ── Data ──────────────────────────────────────────────────
 
 @app.get("/images/{clerk_id}")
 def list_images(clerk_id: str):
@@ -159,15 +156,12 @@ def list_jobs(clerk_id: str):
                 j[field] = json.loads(j[field])
     return {"jobs": jobs}
 
-# ── Transform ─────────────────────────────────────────────
-
 @app.post("/images/transform")
 def transform_image(req: TransformImageRequest):
     try:
         user_id = get_user_id(req.clerk_id)
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
-
         job_id = insert_job(user_id, "raster_transform", {
             "image_id": req.image_id,
             "new_epsg": req.new_epsg,
@@ -184,7 +178,6 @@ def transform_vector(req: TransformVectorRequest):
         user_id = get_user_id(req.clerk_id)
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
-
         job_id = insert_job(user_id, "vector_transform", {
             "vector_id": req.vector_id,
             "new_epsg": req.new_epsg,

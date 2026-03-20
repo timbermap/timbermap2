@@ -4,11 +4,17 @@ Clerk sign secret: whsec_gtpQJ6ljHyzmwlr+ddbZmk6FwOUnLo5q
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YWRhcHRpbmctbWFjYXctNDYuY2xlcmsuYWNjb3VudHMuZGV2JA
 CLERK_SECRET_KEY=sk_test_131q20Q0r6Vh0h6TA7KtWIO2gQHdFcag4e4xDmSzXR
 
+#github: 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
+
 #proxy connect
 ~/cloud-sql-proxy timbermap-prod:us-central1:timbermap-db
 
 #run backend
 poetry run uvicorn main:app --reload --port 8000
+
+#run worker
+cd ~/Documents/10_new_timbermap/workers/raster
+poetry run uvicorn main:app --reload --port 8001
 
 #deploy backend to cloud
 cd ~/Documents/10_new_timbermap/apps/api
