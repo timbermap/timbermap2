@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.5",
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@next/font": "^14.2.15",
     "maplibre-gl": "^5.21.0",
     "next": "16.2.0",
