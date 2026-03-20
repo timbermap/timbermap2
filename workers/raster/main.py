@@ -1,19 +1,44 @@
+"""
+workers/raster/main.py
+Raster ingest + COG worker.
+
+New vs original:
+  • /ingest  — publishes layer to GeoServer after COG is ready,
+               writes geoserver_layer to images table.
+  • /transform — reprojects and/or changes resolution via gdal.Warp,
+                 re-uploads COG, re-registers GeoServer layer, updates DB.
+
+Env vars added:
+    GEOSERVER_URL       GeoServer Cloud Run URL
+    GEOSERVER_PASSWORD  from Secret Manager geoserver-password
+"""
+
 import os
 import json
 import tempfile
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 from dotenv import load_dotenv
 from google.cloud import storage, pubsub_v1
 import psycopg2
 import psycopg2.extras
 
+from geoserver import (
+    publish_raster_layer,
+    update_raster_layer_url,
+    generate_cog_signed_url,
+)
+
 load_dotenv()
 
 app = FastAPI(title="Timbermap Raster Worker")
 
-# ── Helpers ───────────────────────────────────────────────
+GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
+
+
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_conn():
     return psycopg2.connect(
@@ -22,26 +47,33 @@ def get_conn():
         dbname=os.getenv("DB_NAME", "timbermap"),
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD"),
-        cursor_factory=psycopg2.extras.RealDictCursor
+        cursor_factory=psycopg2.extras.RealDictCursor,
     )
+
 
 def update_job(job_id: str, status: str, message: str):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE jobs SET status = %s, message = %s,
-        started_at = CASE WHEN status = 'queued' THEN NOW() ELSE started_at END,
-        finished_at = CASE WHEN %s IN ('done','failed') THEN NOW() ELSE NULL END
+    cur.execute(
+        """
+        UPDATE jobs
+        SET status     = %s,
+            message    = %s,
+            started_at  = CASE WHEN status = 'queued' THEN NOW() ELSE started_at END,
+            finished_at = CASE WHEN %s IN ('done','failed') THEN NOW() ELSE NULL END
         WHERE id = %s
-    """, (status, message, status, job_id))
+        """,
+        (status, message, status, job_id),
+    )
     conn.commit()
     cur.close()
     conn.close()
 
+
 def update_image(image_id: str, **kwargs):
     if not kwargs:
         return
-    fields = ', '.join(f"{k} = %s" for k in kwargs)
+    fields = ", ".join(f"{k} = %s" for k in kwargs)
     values = list(kwargs.values()) + [image_id]
     conn = get_conn()
     cur = conn.cursor()
@@ -50,29 +82,47 @@ def update_image(image_id: str, **kwargs):
     cur.close()
     conn.close()
 
+
+# ── Pub/Sub ───────────────────────────────────────────────────────────────────
+
 def publish_status(job_id: str, status: str, message: str):
     try:
         publisher = pubsub_v1.PublisherClient()
         topic = f"projects/{os.getenv('GCP_PROJECT')}/topics/job-status"
-        publisher.publish(topic, json.dumps({
-            "job_id": job_id, "status": status, "message": message
-        }).encode())
+        publisher.publish(
+            topic,
+            json.dumps({"job_id": job_id, "status": status, "message": message}).encode(),
+        )
     except Exception:
-        pass  # Non-fatal if pubsub not set up yet
+        pass  # Non-fatal
+
+
+# ── GCS helpers ───────────────────────────────────────────────────────────────
 
 def download_from_gcs(gcs_path: str, local_path: str):
     client = storage.Client()
-    bucket = client.bucket(os.getenv("GCS_BUCKET"))
-    blob = bucket.blob(gcs_path)
-    blob.download_to_filename(local_path)
+    client.bucket(GCS_BUCKET).blob(gcs_path).download_to_filename(local_path)
+
 
 def upload_to_gcs(local_path: str, gcs_path: str):
     client = storage.Client()
-    bucket = client.bucket(os.getenv("GCS_BUCKET"))
-    blob = bucket.blob(gcs_path)
-    blob.upload_from_filename(local_path)
+    client.bucket(GCS_BUCKET).blob(gcs_path).upload_from_filename(local_path)
 
-# ── Raster processing ─────────────────────────────────────
+
+def delete_from_gcs(gcs_path: str):
+    try:
+        client = storage.Client()
+        client.bucket(GCS_BUCKET).blob(gcs_path).delete()
+    except Exception:
+        pass
+
+
+def get_cog_signed_url(image_id: str) -> str:
+    gcs_path = f"users/cogs/{image_id}.tif"
+    return generate_cog_signed_url(gcs_path, GCS_BUCKET)
+
+
+# ── Raster processing ─────────────────────────────────────────────────────────
 
 def extract_metadata(tif_path: str) -> dict:
     import rasterio
@@ -83,22 +133,18 @@ def extract_metadata(tif_path: str) -> dict:
         pixel_y = abs(src.transform.e)
         width = src.width
         height = src.height
-
-        # Calculate area in hectares
         if epsg == 4326:
-            area_ha = round(
-                111320 * 111320 * pixel_x * pixel_y * width * height / 10000, 2
-            )
+            area_ha = round(111320 * 111320 * pixel_x * pixel_y * width * height / 10000, 2)
         else:
             area_ha = round(pixel_x * pixel_y * width * height / 10000, 2)
-
         return {
-            "epsg": str(epsg) if epsg else None,
-            "num_bands": num_bands,
+            "epsg":        str(epsg) if epsg else None,
+            "num_bands":   num_bands,
             "pixel_size_x": pixel_x,
             "pixel_size_y": pixel_y,
-            "area_ha": area_ha,
+            "area_ha":     area_ha,
         }
+
 
 def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
     import rasterio
@@ -109,37 +155,60 @@ def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
         scale = min(size / src.width, size / src.height)
         new_w = max(1, int(src.width * scale))
         new_h = max(1, int(src.height * scale))
-
         if src.count >= 3:
             data = src.read([1, 2, 3], out_shape=(3, new_h, new_w),
-                           resampling=Resampling.average)
+                            resampling=Resampling.average)
             img_array = np.moveaxis(data, 0, -1)
         else:
-            data = src.read(1, out_shape=(new_h, new_w),
-                           resampling=Resampling.average)
+            data = src.read(1, out_shape=(new_h, new_w), resampling=Resampling.average)
             img_array = np.stack([data, data, data], axis=-1)
-
-        # Normalize to 0-255
         img_min, img_max = img_array.min(), img_array.max()
         if img_max > img_min:
-            img_array = ((img_array - img_min) / (img_max - img_min) * 255)
+            img_array = (img_array - img_min) / (img_max - img_min) * 255
         img_array = img_array.astype(np.uint8)
+        Image.fromarray(img_array, "RGB").save(thumb_path, "JPEG", quality=85)
 
-        img = Image.fromarray(img_array, 'RGB')
-        img.save(thumb_path, 'JPEG', quality=85)
 
 def convert_to_cog(input_path: str, output_path: str):
-    import rasterio
     from rasterio.shutil import copy as rio_copy
-    rio_copy(input_path, output_path,
-             driver='GTiff',
-             compress='LZW',
-             tiled=True,
-             blockxsize=512,
-             blockysize=512,
-             copy_src_overviews=True)
+    rio_copy(
+        input_path, output_path,
+        driver="GTiff",
+        compress="LZW",
+        tiled=True,
+        blockxsize=512,
+        blockysize=512,
+        copy_src_overviews=True,
+    )
 
-# ── Job handler ───────────────────────────────────────────
+
+def warp_raster(input_path: str, output_path: str,
+                target_epsg: str, target_resolution_m: Optional[float] = None):
+    """
+    Reproject (and optionally resample) a raster using gdal.Warp.
+    target_epsg: e.g. '32614'  (without 'EPSG:' prefix)
+    target_resolution_m: output pixel size in metres (None = keep native resolution)
+    """
+    from osgeo import gdal
+    gdal.UseExceptions()
+
+    warp_opts = gdal.WarpOptions(
+        dstSRS=f"EPSG:{target_epsg}",
+        xRes=target_resolution_m,
+        yRes=target_resolution_m,
+        resampleAlg=gdal.GRA_Bilinear,
+        creationOptions=["COMPRESS=LZW", "TILED=YES",
+                         "BLOCKXSIZE=512", "BLOCKYSIZE=512"],
+        format="GTiff",
+    )
+    result = gdal.Warp(output_path, input_path, options=warp_opts)
+    if result is None:
+        raise RuntimeError(f"gdal.Warp failed for {input_path}")
+    result.FlushCache()
+    result = None  # close dataset
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 class IngestJob(BaseModel):
     job_id: str
@@ -147,9 +216,18 @@ class IngestJob(BaseModel):
     gcs_path: str
     filename: str
 
+
+class TransformJob(BaseModel):
+    job_id: str
+    image_id: str
+    target_epsg: str                      # e.g. "32614"
+    target_resolution_m: Optional[float] = None  # metres; None = keep native
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "raster-worker"}
+
 
 @app.post("/ingest")
 async def ingest_raster(job: IngestJob):
@@ -157,44 +235,124 @@ async def ingest_raster(job: IngestJob):
     publish_status(job.job_id, "running", "Downloading file...")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        tif_path = os.path.join(tmpdir, job.filename)
-        cog_path = os.path.join(tmpdir, "cog_" + job.filename)
+        tif_path   = os.path.join(tmpdir, job.filename)
+        cog_path   = os.path.join(tmpdir, "cog_" + job.filename)
         thumb_path = os.path.join(tmpdir, "thumb.jpg")
 
         try:
-            # 1. Download from GCS
+            # 1. Download
             download_from_gcs(job.gcs_path, tif_path)
 
-            # 2. Extract metadata
+            # 2. Metadata
             update_job(job.job_id, "running", "Reading metadata...")
             meta = extract_metadata(tif_path)
 
-            # 3. Generate thumbnail
+            # 3. Thumbnail
             update_job(job.job_id, "running", "Generating thumbnail...")
             generate_thumbnail(tif_path, thumb_path)
-            thumb_gcs = f"users/thumbnails/{job.image_id}.jpg"
-            upload_to_gcs(thumb_path, thumb_gcs)
+            upload_to_gcs(thumb_path, f"users/thumbnails/{job.image_id}.jpg")
 
-            # 4. Convert to COG
+            # 4. COG
             update_job(job.job_id, "running", "Converting to COG...")
             convert_to_cog(tif_path, cog_path)
             cog_gcs = f"users/cogs/{job.image_id}.tif"
             upload_to_gcs(cog_path, cog_gcs)
 
-            # 5. Update DB
-            update_image(job.image_id,
+            # 5. Publish to GeoServer
+            update_job(job.job_id, "running", "Publishing to GeoServer...")
+            signed_url    = get_cog_signed_url(job.image_id)
+            geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+
+            # 6. Update DB
+            update_image(
+                job.image_id,
                 status="ready",
                 epsg=meta["epsg"],
                 num_bands=meta["num_bands"],
                 pixel_size_x=meta["pixel_size_x"],
                 pixel_size_y=meta["pixel_size_y"],
                 area_ha=meta["area_ha"],
+                geoserver_layer=geoserver_layer,
             )
 
             update_job(job.job_id, "done", "Ingest complete")
             publish_status(job.job_id, "done", "Ingest complete")
+            return {"status": "done", "meta": meta, "geoserver_layer": geoserver_layer}
 
-            return {"status": "done", "meta": meta}
+        except Exception as e:
+            update_job(job.job_id, "failed", str(e))
+            publish_status(job.job_id, "failed", str(e))
+            update_image(job.image_id, status="failed")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/transform")
+async def transform_raster(job: TransformJob):
+    """
+    Reproject (and optionally resample) an existing raster.
+    Downloads the current COG, warps it, converts to COG, re-uploads,
+    re-registers GeoServer layer, and updates DB metadata.
+    """
+    update_job(job.job_id, "running", "Starting raster transform...")
+    publish_status(job.job_id, "running", "Starting raster transform...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src_path    = os.path.join(tmpdir, "source.tif")
+        warped_path = os.path.join(tmpdir, "warped.tif")
+        cog_path    = os.path.join(tmpdir, "cog.tif")
+
+        try:
+            # 1. Download current COG
+            update_job(job.job_id, "running", "Downloading current raster...")
+            cog_gcs = f"users/cogs/{job.image_id}.tif"
+            download_from_gcs(cog_gcs, src_path)
+
+            # 2. Warp
+            update_job(job.job_id, "running",
+                       f"Reprojecting to EPSG:{job.target_epsg}...")
+            warp_raster(src_path, warped_path,
+                        job.target_epsg, job.target_resolution_m)
+
+            # 3. Convert to COG
+            update_job(job.job_id, "running", "Converting to COG...")
+            convert_to_cog(warped_path, cog_path)
+            upload_to_gcs(cog_path, cog_gcs)   # overwrite in-place
+
+            # 4. Extract new metadata
+            meta = extract_metadata(cog_path)
+
+            # 5. Refresh GeoServer URL (signed URL regenerated)
+            update_job(job.job_id, "running", "Updating GeoServer layer...")
+            signed_url = get_cog_signed_url(job.image_id)
+            try:
+                update_raster_layer_url(job.image_id, signed_url)
+            except Exception:
+                # Layer may not exist yet — publish fresh
+                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+            else:
+                from geoserver import WORKSPACE
+                store_name      = f"raster_{job.image_id.replace('-', '_')}"
+                geoserver_layer = f"{WORKSPACE}:{store_name}"
+
+            # 6. Update DB
+            update_image(
+                job.image_id,
+                status="ready",
+                epsg=meta["epsg"],
+                num_bands=meta["num_bands"],
+                pixel_size_x=meta["pixel_size_x"],
+                pixel_size_y=meta["pixel_size_y"],
+                area_ha=meta["area_ha"],
+                geoserver_layer=geoserver_layer,
+            )
+
+            msg = (
+                f"Transform complete → EPSG:{job.target_epsg}"
+                + (f" @ {job.target_resolution_m}m" if job.target_resolution_m else "")
+            )
+            update_job(job.job_id, "done", msg)
+            publish_status(job.job_id, "done", msg)
+            return {"status": "done", "meta": meta, "geoserver_layer": geoserver_layer}
 
         except Exception as e:
             update_job(job.job_id, "failed", str(e))

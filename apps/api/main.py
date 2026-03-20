@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 from webhooks import router as webhook_router
+from stats import router as stats_router
 from database import (
     ensure_user, get_user_id,
     insert_image, insert_vector,
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(webhook_router)
+app.include_router(stats_router, prefix="/stats", tags=["stats"])
 
 class SignedUrlRequest(BaseModel):
     filename: str
