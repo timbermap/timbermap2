@@ -28,7 +28,7 @@ type TransformForm = {
 }
 
 export default function ImagesPage() {
-  const { user } = useUser()
+  const { user, isLoaded } = useUser()
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [images, setImages] = useState<ImageFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +42,7 @@ export default function ImagesPage() {
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchImages = useCallback(async () => {
-    if (!user) return
+    if (!isLoaded || !user) return
     const res = await fetch(`${API}/images/${user.id}`)
     const data = await res.json()
     setImages(data.images || [])
@@ -54,7 +54,7 @@ export default function ImagesPage() {
   }, [user, fetchImages])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!user) return
+    if (!isLoaded || !user) return
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })

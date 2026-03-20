@@ -22,7 +22,7 @@ type UploadItem = {
 }
 
 export default function VectorsPage() {
-  const { user } = useUser()
+  const { user, isLoaded } = useUser()
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [vectors, setVectors] = useState<Vector[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +34,7 @@ export default function VectorsPage() {
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchVectors = useCallback(async () => {
-    if (!user) return
+    if (!isLoaded || !user) return
     const res = await fetch(`${API}/vectors/${user.id}`)
     const data = await res.json()
     setVectors(data.vectors || [])
@@ -46,7 +46,7 @@ export default function VectorsPage() {
   }, [user, fetchVectors])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!user) return
+    if (!isLoaded || !user) return
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
