@@ -258,10 +258,14 @@ async def ingest_raster(job: IngestJob):
             cog_gcs = f"users/cogs/{job.image_id}.tif"
             upload_to_gcs(cog_path, cog_gcs)
 
-            # 5. Publish to GeoServer
-            update_job(job.job_id, "running", "Publishing to GeoServer...")
-            signed_url    = get_cog_signed_url(job.image_id)
-            geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+            # 5. Publish to GeoServer (best-effort — non-fatal)
+            geoserver_layer = None
+            try:
+                update_job(job.job_id, "running", "Publishing to GeoServer...")
+                signed_url = get_cog_signed_url(job.image_id)
+                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+            except Exception as geo_err:
+                print(f"GeoServer publish skipped: {geo_err}")
 
             # 6. Update DB
             update_image(
