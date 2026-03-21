@@ -15,7 +15,7 @@ from database import (
     get_images, get_vectors, get_jobs,
     insert_job
 )
-from tasks import enqueue_raster_ingest, enqueue_vector_ingest
+from tasks import enqueue_raster_ingest, enqueue_vector_ingest, enqueue_raster_transform, enqueue_vector_transform
 
 load_dotenv()
 
@@ -170,6 +170,9 @@ def transform_image(req: TransformImageRequest):
             "new_resolution_x": req.new_resolution_x,
             "new_resolution_y": req.new_resolution_y,
         })
+        if req.new_epsg:
+            res_m = req.new_resolution_x or req.new_resolution_y or None
+            enqueue_raster_transform(str(job_id), req.image_id, req.new_epsg, res_m)
         return {"job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -184,6 +187,7 @@ def transform_vector(req: TransformVectorRequest):
             "vector_id": req.vector_id,
             "new_epsg": req.new_epsg,
         })
+        enqueue_vector_transform(str(job_id), req.vector_id, req.new_epsg)
         return {"job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -67,3 +67,66 @@ def enqueue_vector_ingest(job_id: str, vector_id: str, gcs_path: str, filename: 
         print(f"Enqueued vector ingest job {job_id}")
     except Exception as e:
         print(f"Failed to enqueue task: {e}")
+
+
+def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, target_resolution_m: float = None):
+    try:
+        client = tasks_v2.CloudTasksClient()
+        project = os.getenv("GCP_PROJECT", "timbermap-prod")
+        region = "us-central1"
+        queue = "raster-ingest"
+        worker_url = os.getenv("RASTER_WORKER_URL", "http://localhost:8001")
+
+        parent = client.queue_path(project, region, queue)
+
+        payload = json.dumps({
+            "job_id": job_id,
+            "image_id": image_id,
+            "target_epsg": target_epsg,
+            "target_resolution_m": target_resolution_m,
+        }).encode()
+
+        task = {
+            "http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "url": f"{worker_url}/transform",
+                "body": payload,
+                "headers": {"Content-Type": "application/json"},
+            }
+        }
+
+        client.create_task(parent=parent, task=task)
+        print(f"Enqueued raster transform job {job_id}")
+    except Exception as e:
+        print(f"Failed to enqueue raster transform: {e}")
+
+
+def enqueue_vector_transform(job_id: str, vector_id: str, target_epsg: str):
+    try:
+        client = tasks_v2.CloudTasksClient()
+        project = os.getenv("GCP_PROJECT", "timbermap-prod")
+        region = "us-central1"
+        queue = "vector-ingest"
+        worker_url = os.getenv("VECTOR_WORKER_URL", "http://localhost:8002")
+
+        parent = client.queue_path(project, region, queue)
+
+        payload = json.dumps({
+            "job_id": job_id,
+            "vector_id": vector_id,
+            "target_epsg": target_epsg,
+        }).encode()
+
+        task = {
+            "http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "url": f"{worker_url}/transform",
+                "body": payload,
+                "headers": {"Content-Type": "application/json"},
+            }
+        }
+
+        client.create_task(parent=parent, task=task)
+        print(f"Enqueued vector transform job {job_id}")
+    except Exception as e:
+        print(f"Failed to enqueue vector transform: {e}")
