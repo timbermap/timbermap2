@@ -325,18 +325,20 @@ async def transform_raster(job: TransformJob):
             # 4. Extract new metadata
             meta = extract_metadata(cog_path)
 
-            # 5. Refresh GeoServer URL (signed URL regenerated)
-            update_job(job.job_id, "running", "Updating GeoServer layer...")
-            signed_url = get_cog_signed_url(job.image_id)
+            # 5. Refresh GeoServer URL (best-effort — non-fatal)
+            geoserver_layer = None
             try:
-                update_raster_layer_url(job.image_id, signed_url)
-            except Exception:
-                # Layer may not exist yet — publish fresh
-                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
-            else:
-                from geoserver import WORKSPACE
-                store_name      = f"raster_{job.image_id.replace('-', '_')}"
-                geoserver_layer = f"{WORKSPACE}:{store_name}"
+                update_job(job.job_id, "running", "Updating GeoServer layer...")
+                signed_url = get_cog_signed_url(job.image_id)
+                try:
+                    update_raster_layer_url(job.image_id, signed_url)
+                    from geoserver import WORKSPACE
+                    store_name = f"raster_{job.image_id.replace('-', '_')}"
+                    geoserver_layer = f"{WORKSPACE}:{store_name}"
+                except Exception:
+                    geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+            except Exception as geo_err:
+                print(f"GeoServer publish skipped: {geo_err}")
 
             # 6. Update DB
             update_image(
