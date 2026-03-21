@@ -8,3 +8,4 @@ node_modules/
 service-account.json
 apps/api/.env
 maquina.txt
+clean_geoserver.py

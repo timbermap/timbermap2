@@ -1,16 +1,6 @@
 """
 workers/raster/main.py
 Raster ingest + COG worker.
-
-New vs original:
-  • /ingest  — publishes layer to GeoServer after COG is ready,
-               writes geoserver_layer to images table.
-  • /transform — reprojects and/or changes resolution via gdal.Warp,
-                 re-uploads COG, re-registers GeoServer layer, updates DB.
-
-Env vars added:
-    GEOSERVER_URL       GeoServer Cloud Run URL
-    GEOSERVER_PASSWORD  from Secret Manager geoserver-password
 """
 
 import os
@@ -27,8 +17,9 @@ import psycopg2.extras
 
 from geoserver import (
     publish_raster_layer,
-    update_raster_layer_url,
+    delete_raster_layer,
     generate_cog_signed_url,
+    WORKSPACE,
 )
 
 load_dotenv()
@@ -94,7 +85,7 @@ def publish_status(job_id: str, status: str, message: str):
             json.dumps({"job_id": job_id, "status": status, "message": message}).encode(),
         )
     except Exception:
-        pass  # Non-fatal
+        pass
 
 
 # ── GCS helpers ───────────────────────────────────────────────────────────────
@@ -138,11 +129,11 @@ def extract_metadata(tif_path: str) -> dict:
         else:
             area_ha = round(pixel_x * pixel_y * width * height / 10000, 2)
         return {
-            "epsg":        str(epsg) if epsg else None,
-            "num_bands":   num_bands,
+            "epsg":         str(epsg) if epsg else None,
+            "num_bands":    num_bands,
             "pixel_size_x": pixel_x,
             "pixel_size_y": pixel_y,
-            "area_ha":     area_ha,
+            "area_ha":      area_ha,
         }
 
 
@@ -184,11 +175,6 @@ def convert_to_cog(input_path: str, output_path: str):
 
 def warp_raster(input_path: str, output_path: str,
                 target_epsg: str, target_resolution_m: Optional[float] = None):
-    """
-    Reproject (and optionally resample) a raster using gdal.Warp.
-    target_epsg: e.g. '32614'  (without 'EPSG:' prefix)
-    target_resolution_m: output pixel size in metres (None = keep native resolution)
-    """
     from osgeo import gdal
     gdal.UseExceptions()
 
@@ -205,7 +191,7 @@ def warp_raster(input_path: str, output_path: str,
     if result is None:
         raise RuntimeError(f"gdal.Warp failed for {input_path}")
     result.FlushCache()
-    result = None  # close dataset
+    result = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -220,8 +206,8 @@ class IngestJob(BaseModel):
 class TransformJob(BaseModel):
     job_id: str
     image_id: str
-    target_epsg: str                      # e.g. "32614"
-    target_resolution_m: Optional[float] = None  # metres; None = keep native
+    target_epsg: str
+    target_resolution_m: Optional[float] = None
 
 
 @app.get("/health")
@@ -240,25 +226,20 @@ async def ingest_raster(job: IngestJob):
         thumb_path = os.path.join(tmpdir, "thumb.jpg")
 
         try:
-            # 1. Download
             download_from_gcs(job.gcs_path, tif_path)
 
-            # 2. Metadata
             update_job(job.job_id, "running", "Reading metadata...")
             meta = extract_metadata(tif_path)
 
-            # 3. Thumbnail
             update_job(job.job_id, "running", "Generating thumbnail...")
             generate_thumbnail(tif_path, thumb_path)
             upload_to_gcs(thumb_path, f"users/thumbnails/{job.image_id}.jpg")
 
-            # 4. COG
             update_job(job.job_id, "running", "Converting to COG...")
             convert_to_cog(tif_path, cog_path)
             cog_gcs = f"users/cogs/{job.image_id}.tif"
             upload_to_gcs(cog_path, cog_gcs)
 
-            # 5. Publish to GeoServer (best-effort — non-fatal)
             geoserver_layer = None
             try:
                 update_job(job.job_id, "running", "Publishing to GeoServer...")
@@ -267,7 +248,6 @@ async def ingest_raster(job: IngestJob):
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
-            # 6. Update DB
             update_image(
                 job.image_id,
                 status="ready",
@@ -292,11 +272,6 @@ async def ingest_raster(job: IngestJob):
 
 @app.post("/transform")
 async def transform_raster(job: TransformJob):
-    """
-    Reproject (and optionally resample) an existing raster.
-    Downloads the current COG, warps it, converts to COG, re-uploads,
-    re-registers GeoServer layer, and updates DB metadata.
-    """
     update_job(job.job_id, "running", "Starting raster transform...")
     publish_status(job.job_id, "running", "Starting raster transform...")
 
@@ -306,41 +281,29 @@ async def transform_raster(job: TransformJob):
         cog_path    = os.path.join(tmpdir, "cog.tif")
 
         try:
-            # 1. Download current COG
             update_job(job.job_id, "running", "Downloading current raster...")
             cog_gcs = f"users/cogs/{job.image_id}.tif"
             download_from_gcs(cog_gcs, src_path)
 
-            # 2. Warp
-            update_job(job.job_id, "running",
-                       f"Reprojecting to EPSG:{job.target_epsg}...")
-            warp_raster(src_path, warped_path,
-                        job.target_epsg, job.target_resolution_m)
+            update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
+            warp_raster(src_path, warped_path, job.target_epsg, job.target_resolution_m)
 
-            # 3. Convert to COG
             update_job(job.job_id, "running", "Converting to COG...")
             convert_to_cog(warped_path, cog_path)
-            upload_to_gcs(cog_path, cog_gcs)   # overwrite in-place
+            upload_to_gcs(cog_path, cog_gcs)
 
-            # 4. Extract new metadata
             meta = extract_metadata(cog_path)
 
-            # 5. Refresh GeoServer URL (best-effort — non-fatal)
+            # Delete old GeoServer layer before re-publishing
             geoserver_layer = None
             try:
                 update_job(job.job_id, "running", "Updating GeoServer layer...")
+                delete_raster_layer(job.image_id)   # ← always delete first
                 signed_url = get_cog_signed_url(job.image_id)
-                try:
-                    update_raster_layer_url(job.image_id, signed_url)
-                    from geoserver import WORKSPACE
-                    store_name = f"raster_{job.image_id.replace('-', '_')}"
-                    geoserver_layer = f"{WORKSPACE}:{store_name}"
-                except Exception:
-                    geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
-            # 6. Update DB
             update_image(
                 job.image_id,
                 status="ready",
