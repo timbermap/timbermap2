@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 RUN pip install poetry
+RUN pip install GDAL==$(gdal-config --version)
 
 COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false \

@@ -316,11 +316,15 @@ async def transform_vector(job: TransformJob):
         update_job(job.job_id, "running", "Saving reprojected data to PostGIS...")
         push_to_postgis(gdf, "vectors", tbl)
 
-        # 4. Re-publish GeoServer layer (delete + re-create to refresh schema)
-        update_job(job.job_id, "running", "Updating GeoServer layer...")
-        from geoserver import delete_vector_layer
-        delete_vector_layer(job.vector_id)            # ignore errors if missing
-        geoserver_layer = publish_vector_layer(job.vector_id, tbl, new_epsg)
+        # 4. Re-publish GeoServer layer (best-effort — non-fatal)
+        geoserver_layer = None
+        try:
+            update_job(job.job_id, "running", "Updating GeoServer layer...")
+            from geoserver import delete_vector_layer
+            delete_vector_layer(job.vector_id)
+            geoserver_layer = publish_vector_layer(job.vector_id, tbl, new_epsg)
+        except Exception as geo_err:
+            print(f"GeoServer publish skipped: {geo_err}")
 
         # 5. Update DB
         update_vector(
