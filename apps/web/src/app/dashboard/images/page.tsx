@@ -148,6 +148,18 @@ export default function ImagesPage() {
     return (bytes / 1e3).toFixed(0) + ' KB'
   }
 
+  async function handleDownload(imageId: string) {
+    if (!user) return
+    const res = await fetch(`${API}/images/${imageId}/download?clerk_id=${user.id}`)
+    const data = await res.json()
+    if (data.url) {
+      const a = document.createElement('a')
+      a.href = data.url
+      a.download = ''
+      a.click()
+    }
+  }
+
   const statusColor: Record<string, string> = {
     uploaded:   'bg-blue-50 text-blue-700',
     processing: 'bg-yellow-50 text-yellow-700',
@@ -289,7 +301,7 @@ export default function ImagesPage() {
                     <div className="flex items-center gap-3">
                       <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
                         className="text-xs text-[#2C5F45] hover:underline font-medium">Transform</button>
-                      <button className="text-xs text-gray-400 hover:underline">View</button>
+                      <button onClick={() => handleDownload(img.id)} className="text-xs text-gray-400 hover:underline">Download</button>
                     </div>
                   </td>
                 </tr>

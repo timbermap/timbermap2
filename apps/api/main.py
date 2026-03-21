@@ -230,3 +230,51 @@ def get_layers(clerk_id: str):
             })
 
     return {"layers": layers}
+
+
+@app.get("/images/{image_id}/download")
+def download_image(image_id: str, clerk_id: str):
+    from datetime import timedelta
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    images = get_images(user_id)
+    img = next((i for i in images if str(i["id"]) == image_id), None)
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+    try:
+        client = storage.Client()
+        bucket = client.bucket(os.getenv("GCS_BUCKET"))
+        blob = bucket.blob(img["gcs_path"])
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=1),
+            method="GET",
+        )
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/vectors/{vector_id}/download")
+def download_vector(vector_id: str, clerk_id: str):
+    from datetime import timedelta
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    vectors = get_vectors(user_id)
+    vec = next((v for v in vectors if str(v["id"]) == vector_id), None)
+    if not vec:
+        raise HTTPException(status_code=404, detail="Vector not found")
+    try:
+        client = storage.Client()
+        bucket = client.bucket(os.getenv("GCS_BUCKET"))
+        blob = bucket.blob(vec["gcs_path"])
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=1),
+            method="GET",
+        )
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
