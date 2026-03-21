@@ -37,7 +37,8 @@ export default function JobsPage() {
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchJobs = useCallback(async () => {
-    if (!isLoaded || !user) return
+    if (!isLoaded) return
+    if (!user) { setLoading(false); return }
     const res = await fetch(`${API}/jobs/${user.id}`)
     const data = await res.json()
     setJobs(data.jobs || [])

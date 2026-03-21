@@ -42,7 +42,8 @@ export default function ImagesPage() {
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchImages = useCallback(async () => {
-    if (!isLoaded || !user) return
+    if (!isLoaded) return
+    if (!user) { setLoading(false); return }
     const res = await fetch(`${API}/images/${user.id}`)
     const data = await res.json()
     setImages(data.images || [])
@@ -54,7 +55,8 @@ export default function ImagesPage() {
   }, [user, fetchImages])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!isLoaded || !user) return
+    if (!isLoaded) return
+    if (!user) { setLoading(false); return }
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
