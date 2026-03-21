@@ -43,12 +43,12 @@ def _ok(r: requests.Response, *extra_codes: int) -> bool:
 
 def ensure_workspace() -> None:
     url = f"{_base()}/workspaces/{WORKSPACE}"
-    r = requests.get(url, auth=_auth(), headers=_json_headers(), timeout=30)
+    r = requests.get(url, auth=_auth(), headers=_json_headers(), timeout=120)
     if r.status_code == 404:
         r2 = requests.post(
             f"{_base()}/workspaces",
             json={"workspace": {"name": WORKSPACE}},
-            auth=_auth(), headers=_json_headers(), timeout=30,
+            auth=_auth(), headers=_json_headers(), timeout=120,
         )
         r2.raise_for_status()
         log.info("GeoServer workspace '%s' created.", WORKSPACE)
@@ -69,7 +69,7 @@ def ensure_postgis_datastore() -> str:
     """
     ensure_workspace()
     ds_url = f"{_base()}/workspaces/{WORKSPACE}/datastores/{POSTGIS_DATASTORE}"
-    r = requests.get(ds_url, auth=_auth(), headers=_json_headers(), timeout=30)
+    r = requests.get(ds_url, auth=_auth(), headers=_json_headers(), timeout=120)
     if _ok(r):
         return POSTGIS_DATASTORE
 
@@ -101,7 +101,7 @@ def ensure_postgis_datastore() -> str:
     }
     r2 = requests.post(
         f"{_base()}/workspaces/{WORKSPACE}/datastores",
-        json=payload, auth=_auth(), headers=_json_headers(), timeout=30,
+        json=payload, auth=_auth(), headers=_json_headers(), timeout=120,
     )
     r2.raise_for_status()
     log.info("GeoServer PostGIS datastore '%s' created.", POSTGIS_DATASTORE)
@@ -137,11 +137,11 @@ def publish_raster_layer(image_id: str, cog_http_url: str) -> str:
 
     stores_url = f"{_base()}/workspaces/{WORKSPACE}/coveragestores"
     r = requests.post(stores_url, json=store_payload,
-                      auth=_auth(), headers=_json_headers(), timeout=30)
+                      auth=_auth(), headers=_json_headers(), timeout=120)
     if not _ok(r):
         # Store may already exist — update the URL
         requests.put(f"{stores_url}/{store_name}", json=store_payload,
-                     auth=_auth(), headers=_json_headers(), timeout=30)
+                     auth=_auth(), headers=_json_headers(), timeout=120)
 
     # Publish coverage (layer)
     cov_payload = {
@@ -176,7 +176,7 @@ def update_raster_layer_url(image_id: str, cog_http_url: str) -> None:
     }
     r = requests.put(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}",
-        json=payload, auth=_auth(), headers=_json_headers(), timeout=30,
+        json=payload, auth=_auth(), headers=_json_headers(), timeout=120,
     )
     if not _ok(r, 404):
         r.raise_for_status()
@@ -190,12 +190,12 @@ def delete_raster_layer(image_id: str) -> None:
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}"
         f"/coverages/{layer_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
     # Delete store
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
     log.info("GeoServer raster layer deleted: %s", store_name)
 
@@ -233,7 +233,7 @@ def publish_vector_layer(vector_id: str, table_name: str, epsg: str = "4326") ->
     }
     ft_url = f"{_base()}/workspaces/{WORKSPACE}/datastores/{ds_name}/featuretypes"
     r = requests.post(ft_url, json=payload,
-                      auth=_auth(), headers=_json_headers(), timeout=30)
+                      auth=_auth(), headers=_json_headers(), timeout=120)
     if not _ok(r, 409):
         r.raise_for_status()
 
@@ -248,7 +248,7 @@ def delete_vector_layer(vector_id: str) -> None:
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/datastores/{POSTGIS_DATASTORE}"
         f"/featuretypes/{table_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
     log.info("GeoServer vector layer deleted: %s", table_name)
 
