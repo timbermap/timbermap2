@@ -44,10 +44,15 @@ export default function ImagesPage() {
   const fetchImages = useCallback(async () => {
     if (!isLoaded) return
     if (!user) { setLoading(false); return }
-    const res = await fetch(`${API}/images/${user.id}`)
-    const data = await res.json()
-    setImages(data.images || [])
-    setLoading(false)
+    try {
+      const res = await fetch(`${API}/images/${user.id}`)
+      const data = await res.json()
+      setImages(data.images || [])
+    } catch (e) {
+      console.error('fetchImages failed', e)
+    } finally {
+      setLoading(false)
+    }
   }, [user, isLoaded, API])
 
   useEffect(() => {

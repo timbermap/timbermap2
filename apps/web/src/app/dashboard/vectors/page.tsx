@@ -36,10 +36,15 @@ export default function VectorsPage() {
   const fetchVectors = useCallback(async () => {
     if (!isLoaded) return
     if (!user) { setLoading(false); return }
-    const res = await fetch(`${API}/vectors/${user.id}`)
-    const data = await res.json()
-    setVectors(data.vectors || [])
-    setLoading(false)
+    try {
+      const res = await fetch(`${API}/vectors/${user.id}`)
+      const data = await res.json()
+      setVectors(data.vectors || [])
+    } catch (e) {
+      console.error('fetchVectors failed', e)
+    } finally {
+      setLoading(false)
+    }
   }, [user, isLoaded, API])
 
   useEffect(() => {
