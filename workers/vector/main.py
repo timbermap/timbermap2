@@ -245,9 +245,13 @@ async def ingest_vector(job: IngestJob):
             tbl = table_name_for(job.vector_id)
             push_to_postgis(gdf, "vectors", tbl)
 
-            # Publish to GeoServer
-            update_job(job.job_id, "running", "Publishing to GeoServer...")
-            geoserver_layer = publish_vector_layer(job.vector_id, tbl, epsg)
+            # Publish to GeoServer (best-effort — non-fatal)
+            geoserver_layer = None
+            try:
+                update_job(job.job_id, "running", "Publishing to GeoServer...")
+                geoserver_layer = publish_vector_layer(job.vector_id, tbl, epsg)
+            except Exception as geo_err:
+                print(f"GeoServer publish skipped: {geo_err}")
 
             repair_note = f" ({fixed_count} geometries repaired)" if fixed_count else ""
             update_vector(
