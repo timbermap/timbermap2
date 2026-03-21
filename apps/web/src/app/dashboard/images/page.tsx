@@ -14,6 +14,13 @@ type ImageFile = {
   created_at: string
 }
 
+type Job = {
+  id: string
+  type: string
+  status: string
+  input_ref: Record<string, unknown> | null
+}
+
 type UploadItem = {
   file: File
   progress: number
@@ -31,6 +38,7 @@ export default function ImagesPage() {
   const { user, isLoaded } = useUser()
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [images, setImages] = useState<ImageFile[]>([])
+  const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showTransform, setShowTransform] = useState(false)
@@ -41,27 +49,49 @@ export default function ImagesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchImages = useCallback(async () => {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+  const fetchData = useCallback(async () => {
+    if (!isLoaded || !user) {
+      setLoading(false)
+      return
+    }
     try {
-      const res = await fetch(`${API}/images/${user.id}`)
-      const data = await res.json()
-      setImages(data.images || [])
+      const [imgRes, jobsRes] = await Promise.all([
+        fetch(`${API}/images/${user.id}`),
+        fetch(`${API}/jobs/${user.id}`),
+      ])
+      const imgData = await imgRes.json()
+      const jobsData = await jobsRes.json()
+
+      setImages(imgData.images || [])
+
+      // Build set of image IDs that have an active (queued or running) job
+      const active = new Set<string>()
+      for (const job of (jobsData.jobs || []) as Job[]) {
+        if (job.status === 'queued' || job.status === 'running') {
+          const iid = job.input_ref?.image_id as string | undefined
+          if (iid) active.add(iid)
+        }
+      }
+      setActiveImageIds(active)
     } catch (e) {
-      console.error('fetchImages failed', e)
+      console.error('fetchData failed', e)
     } finally {
       setLoading(false)
     }
   }, [user, isLoaded, API])
 
   useEffect(() => {
-    if (isLoaded && user) fetchImages()
-  }, [user, fetchImages])
+    if (isLoaded && user) fetchData()
+  }, [user, fetchData])
+
+  // Poll every 5s to keep job status fresh
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+    if (!isLoaded || !user) { setLoading(false); return }
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
@@ -119,7 +149,7 @@ export default function ImagesPage() {
     }))
     setUploads(items)
     await Promise.all(items.map((item, i) => uploadSingle(item, i)))
-    await fetchImages()
+    await fetchData()
     setTimeout(() => setUploads([]), 3000)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -142,7 +172,7 @@ export default function ImagesPage() {
       setShowTransform(false)
       setSelectedId(null)
       setTransform({ new_epsg: '', new_resolution_x: '', new_resolution_y: '' })
-      await fetchImages()
+      await fetchData()
     } finally {
       setTransforming(false)
     }
@@ -175,10 +205,10 @@ export default function ImagesPage() {
   }
 
   const uploadColor: Record<string, string> = {
-    waiting:  'bg-gray-100',
+    waiting:   'bg-gray-100',
     uploading: 'bg-[#2C5F45]',
-    done:     'bg-green-500',
-    error:    'bg-red-400',
+    done:      'bg-green-500',
+    error:     'bg-red-400',
   }
 
   return (
@@ -191,8 +221,7 @@ export default function ImagesPage() {
         </div>
         <button
           onClick={() => fileRef.current?.click()}
-          className="bg-[#2C5F45] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors"
-        >
+          className="bg-[#2C5F45] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors">
           + Upload images
         </button>
         <input ref={fileRef} type="file" accept=".tif,.tiff" multiple className="hidden" onChange={handleFiles} />
@@ -292,29 +321,49 @@ export default function ImagesPage() {
               </tr>
             </thead>
             <tbody>
-              {images.map(img => (
-                <tr key={img.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-3.5 text-gray-900 font-medium">{img.filename}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{img.epsg || '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{img.num_bands || '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{formatSize(img.filesize)}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[img.status] || 'bg-gray-50 text-gray-500'}`}>
-                      {img.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
-                        className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">Transform</button>
-                      <button onClick={() => handleDownload(img.id)} title="Download" className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {images.map(img => {
+                const isActive = activeImageIds.has(img.id)
+                return (
+                  <tr key={img.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-5 py-3.5 text-gray-900 font-medium">{img.filename}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{img.epsg || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{img.num_bands || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{formatSize(img.filesize)}</td>
+                    <td className="px-5 py-3.5">
+                      {isActive ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
+                          <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                          Processing
+                        </span>
+                      ) : (
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[img.status] || 'bg-gray-50 text-gray-500'}`}>
+                          {img.status}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {isActive ? (
+                        <span className="text-xs text-gray-300">Busy...</span>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
+                            className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">
+                            Transform
+                          </button>
+                          <button
+                            onClick={() => handleDownload(img.id)}
+                            title="Download"
+                            className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

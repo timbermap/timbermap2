@@ -14,6 +14,13 @@ type Vector = {
   created_at: string
 }
 
+type Job = {
+  id: string
+  type: string
+  status: string
+  input_ref: Record<string, unknown> | null
+}
+
 type UploadItem = {
   file: File
   progress: number
@@ -25,6 +32,7 @@ export default function VectorsPage() {
   const { user, isLoaded } = useUser()
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [vectors, setVectors] = useState<Vector[]>([])
+  const [activeVectorIds, setActiveVectorIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showTransform, setShowTransform] = useState(false)
@@ -33,27 +41,49 @@ export default function VectorsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchVectors = useCallback(async () => {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+  const fetchData = useCallback(async () => {
+    if (!isLoaded || !user) {
+      setLoading(false)
+      return
+    }
     try {
-      const res = await fetch(`${API}/vectors/${user.id}`)
-      const data = await res.json()
-      setVectors(data.vectors || [])
+      const [vecRes, jobsRes] = await Promise.all([
+        fetch(`${API}/vectors/${user.id}`),
+        fetch(`${API}/jobs/${user.id}`),
+      ])
+      const vecData = await vecRes.json()
+      const jobsData = await jobsRes.json()
+
+      setVectors(vecData.vectors || [])
+
+      // Build set of vector IDs that have an active (queued or running) job
+      const active = new Set<string>()
+      for (const job of (jobsData.jobs || []) as Job[]) {
+        if (job.status === 'queued' || job.status === 'running') {
+          const vid = job.input_ref?.vector_id as string | undefined
+          if (vid) active.add(vid)
+        }
+      }
+      setActiveVectorIds(active)
     } catch (e) {
-      console.error('fetchVectors failed', e)
+      console.error('fetchData failed', e)
     } finally {
       setLoading(false)
     }
   }, [user, isLoaded, API])
 
   useEffect(() => {
-    if (isLoaded && user) fetchVectors()
-  }, [user, fetchVectors])
+    if (isLoaded && user) fetchData()
+  }, [user, fetchData])
+
+  // Poll every 5s to keep job status fresh
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+    if (!isLoaded || !user) { setLoading(false); return }
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
@@ -111,7 +141,7 @@ export default function VectorsPage() {
     }))
     setUploads(items)
     await Promise.all(items.map((item, i) => uploadSingle(item, i)))
-    await fetchVectors()
+    await fetchData()
     setTimeout(() => setUploads([]), 3000)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -128,7 +158,7 @@ export default function VectorsPage() {
       setShowTransform(false)
       setSelectedId(null)
       setNewEpsg('')
-      await fetchVectors()
+      await fetchData()
     } finally {
       setTransforming(false)
     }
@@ -161,10 +191,10 @@ export default function VectorsPage() {
   }
 
   const uploadColor: Record<string, string> = {
-    waiting:  'bg-gray-100',
+    waiting:   'bg-gray-100',
     uploading: 'bg-[#2C5F45]',
-    done:     'bg-green-500',
-    error:    'bg-red-400',
+    done:      'bg-green-500',
+    error:     'bg-red-400',
   }
 
   return (
@@ -267,29 +297,49 @@ export default function VectorsPage() {
               </tr>
             </thead>
             <tbody>
-              {vectors.map(v => (
-                <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-3.5 text-gray-900 font-medium">{v.filename}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{v.epsg || '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{v.geometry_type || '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{v.area_ha ? v.area_ha.toLocaleString() : '—'}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{formatSize(v.filesize)}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[v.status] || 'bg-gray-50 text-gray-500'}`}>
-                      {v.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => { setSelectedId(v.id); setShowTransform(true) }}
-                        className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">Transform</button>
-                      <button onClick={() => handleDownload(v.id)} title="Download" className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {vectors.map(v => {
+                const isActive = activeVectorIds.has(v.id)
+                return (
+                  <tr key={v.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-5 py-3.5 text-gray-900 font-medium">{v.filename}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{v.epsg || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{v.geometry_type || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{v.area_ha ? v.area_ha.toLocaleString() : '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{formatSize(v.filesize)}</td>
+                    <td className="px-5 py-3.5">
+                      {isActive ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
+                          <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                          Processing
+                        </span>
+                      ) : (
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[v.status] || 'bg-gray-50 text-gray-500'}`}>
+                          {v.status}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {isActive ? (
+                        <span className="text-xs text-gray-300">Busy...</span>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => { setSelectedId(v.id); setShowTransform(true) }}
+                            className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">
+                            Transform
+                          </button>
+                          <button
+                            onClick={() => handleDownload(v.id)}
+                            title="Download"
+                            className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
