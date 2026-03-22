@@ -129,14 +129,19 @@ def extract_metadata(tif_path: str) -> dict:
             area_ha = round(111320 * 111320 * pixel_x * pixel_y * width * height / 10000, 2)
         else:
             area_ha = round(pixel_x * pixel_y * width * height / 10000, 2)
-        # Native bbox in file CRS
+
+        # Always store bbox in EPSG:4326 for consistent frontend use
         bounds = src.bounds
-        bbox = {
-            "minx": bounds.left,
-            "miny": bounds.bottom,
-            "maxx": bounds.right,
-            "maxy": bounds.top,
-        }
+        if src.crs and src.crs.to_epsg() != 4326:
+            left, bottom, right, top = transform_bounds(
+                src.crs, "EPSG:4326",
+                bounds.left, bounds.bottom, bounds.right, bounds.top
+            )
+        else:
+            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
+
+        bbox = {"minx": left, "miny": bottom, "maxx": right, "maxy": top}
+
         return {
             "epsg":         str(epsg) if epsg else None,
             "num_bands":    num_bands,
@@ -171,16 +176,31 @@ def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
 
 
 def convert_to_cog(input_path: str, output_path: str):
-    from rasterio.shutil import copy as rio_copy
-    rio_copy(
-        input_path, output_path,
-        driver="GTiff",
-        compress="LZW",
-        tiled=True,
-        blockxsize=512,
-        blockysize=512,
-        copy_src_overviews=True,
+    """
+    Reproject to EPSG:3857 + GoogleMapsCompatible tiling scheme.
+    Required by @geomatico/maplibre-cog-protocol which does not reproject.
+    """
+    from osgeo import gdal
+    gdal.UseExceptions()
+
+    warp_opts = gdal.WarpOptions(
+        dstSRS="EPSG:3857",
+        resampleAlg=gdal.GRA_Bilinear,
+        format="COG",
+        creationOptions=[
+            "BLOCKSIZE=256",
+            "TILING_SCHEME=GoogleMapsCompatible",
+            "COMPRESS=JPEG",
+            "OVERVIEWS=IGNORE_EXISTING",
+            "ADD_ALPHA=NO",
+        ],
+        dstNodata=float("nan"),
     )
+    result = gdal.Warp(output_path, input_path, options=warp_opts)
+    if result is None:
+        raise RuntimeError(f"gdal.Warp COG conversion failed for {input_path}")
+    result.FlushCache()
+    result = None
 
 
 def warp_raster(input_path: str, output_path: str,
@@ -245,7 +265,7 @@ async def ingest_raster(job: IngestJob):
             generate_thumbnail(tif_path, thumb_path)
             upload_to_gcs(thumb_path, f"users/thumbnails/{job.image_id}.jpg")
 
-            update_job(job.job_id, "running", "Converting to COG...")
+            update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
             convert_to_cog(tif_path, cog_path)
             cog_gcs = f"users/cogs/{job.image_id}.tif"
             upload_to_gcs(cog_path, cog_gcs)
@@ -307,17 +327,16 @@ async def transform_raster(job: TransformJob):
             update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
             warp_raster(src_path, warped_path, job.target_epsg, job.target_resolution_m)
 
-            update_job(job.job_id, "running", "Converting to COG...")
+            update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
             convert_to_cog(warped_path, cog_path)
             upload_to_gcs(cog_path, cog_gcs)
 
             meta = extract_metadata(cog_path)
 
-            # Delete old GeoServer layer before re-publishing
             geoserver_layer = None
             try:
                 update_job(job.job_id, "running", "Updating GeoServer layer...")
-                delete_raster_layer(job.image_id)   # ← always delete first
+                delete_raster_layer(job.image_id)
                 signed_url = get_cog_signed_url(job.image_id)
                 geoserver_layer = publish_raster_layer(
                     job.image_id, signed_url,
