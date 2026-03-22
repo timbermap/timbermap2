@@ -36,16 +36,15 @@ export default function VectorsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showTransform, setShowTransform] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [transforming, setTransforming] = useState(false)
   const [newEpsg, setNewEpsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchData = useCallback(async () => {
-    if (!isLoaded || !user) {
-      setLoading(false)
-      return
-    }
+    if (!isLoaded || !user) { setLoading(false); return }
     try {
       const [vecRes, jobsRes] = await Promise.all([
         fetch(`${API}/vectors/${user.id}`),
@@ -53,10 +52,7 @@ export default function VectorsPage() {
       ])
       const vecData = await vecRes.json()
       const jobsData = await jobsRes.json()
-
       setVectors(vecData.vectors || [])
-
-      // Build set of vector IDs that have an active (queued or running) job
       const active = new Set<string>()
       for (const job of (jobsData.jobs || []) as Job[]) {
         if (job.status === 'queued' || job.status === 'running') {
@@ -72,11 +68,7 @@ export default function VectorsPage() {
     }
   }, [user, isLoaded, API])
 
-  useEffect(() => {
-    if (isLoaded && user) fetchData()
-  }, [user, fetchData])
-
-  // Poll every 5s to keep job status fresh
+  useEffect(() => { if (isLoaded && user) fetchData() }, [user, fetchData])
   useEffect(() => {
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
@@ -89,16 +81,12 @@ export default function VectorsPage() {
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
     try {
       const res = await fetch(`${API}/upload/signed-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: item.file.name,
-          content_type: 'application/zip',
-          clerk_id: user.id,
-          email: user.emailAddresses[0]?.emailAddress,
+          filename: item.file.name, content_type: 'application/zip',
+          clerk_id: user.id, email: user.emailAddresses[0]?.emailAddress,
           username: user.username || user.firstName || user.id,
-          file_type: 'vector',
-          filesize: item.file.size,
+          file_type: 'vector', filesize: item.file.size,
         }),
       })
       const { url, gcs_path } = await res.json()
@@ -106,8 +94,7 @@ export default function VectorsPage() {
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable)
-            updateItem({ progress: Math.round((e.loaded / e.total) * 100) })
+          if (e.lengthComputable) updateItem({ progress: Math.round((e.loaded / e.total) * 100) })
         }
         xhr.onload = () => xhr.status === 200 ? resolve() : reject(xhr.statusText)
         xhr.onerror = () => reject('Upload failed')
@@ -117,14 +104,10 @@ export default function VectorsPage() {
       })
       updateItem({ message: 'Saving...' })
       await fetch(`${API}/upload/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clerk_id: user.id,
-          filename: item.file.name,
-          gcs_path,
-          filesize: item.file.size,
-          file_type: 'vector',
+          clerk_id: user.id, filename: item.file.name,
+          gcs_path, filesize: item.file.size, file_type: 'vector',
         }),
       })
       updateItem({ status: 'done', progress: 100, message: 'Done' })
@@ -136,9 +119,7 @@ export default function VectorsPage() {
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const items: UploadItem[] = files.map(f => ({
-      file: f, progress: 0, status: 'waiting', message: 'Waiting...'
-    }))
+    const items: UploadItem[] = files.map(f => ({ file: f, progress: 0, status: 'waiting', message: 'Waiting...' }))
     setUploads(items)
     await Promise.all(items.map((item, i) => uploadSingle(item, i)))
     await fetchData()
@@ -151,16 +132,24 @@ export default function VectorsPage() {
     setTransforming(true)
     try {
       await fetch(`${API}/vectors/transform`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clerk_id: user.id, vector_id: selectedId, new_epsg: newEpsg }),
       })
-      setShowTransform(false)
-      setSelectedId(null)
-      setNewEpsg('')
+      setShowTransform(false); setSelectedId(null); setNewEpsg('')
       await fetchData()
     } finally {
       setTransforming(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!user || !deletingId) return
+    try {
+      await fetch(`${API}/vectors/${deletingId}?clerk_id=${user.id}`, { method: 'DELETE' })
+      setShowDeleteConfirm(false); setDeletingId(null)
+      await fetchData()
+    } catch (err) {
+      console.error('Delete failed', err)
     }
   }
 
@@ -175,27 +164,18 @@ export default function VectorsPage() {
     if (!user) return
     const res = await fetch(`${API}/vectors/${vectorId}/download?clerk_id=${user.id}`)
     const data = await res.json()
-    if (data.url) {
-      const a = document.createElement('a')
-      a.href = data.url
-      a.download = ''
-      a.click()
-    }
+    if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
   const statusColor: Record<string, string> = {
-    uploaded:   'bg-blue-50 text-blue-700',
-    processing: 'bg-yellow-50 text-yellow-700',
-    ready:      'bg-green-50 text-green-700',
-    failed:     'bg-red-50 text-red-700',
+    uploaded: 'bg-blue-50 text-blue-700', processing: 'bg-yellow-50 text-yellow-700',
+    ready: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
+  }
+  const uploadColor: Record<string, string> = {
+    waiting: 'bg-gray-100', uploading: 'bg-[#2C5F45]', done: 'bg-green-500', error: 'bg-red-400',
   }
 
-  const uploadColor: Record<string, string> = {
-    waiting:   'bg-gray-100',
-    uploading: 'bg-[#2C5F45]',
-    done:      'bg-green-500',
-    error:     'bg-red-400',
-  }
+  const deletingFilename = vectors.find(v => v.id === deletingId)?.filename
 
   return (
     <div className="max-w-6xl">
@@ -245,6 +225,7 @@ export default function VectorsPage() {
         </div>
       )}
 
+      {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
@@ -263,6 +244,28 @@ export default function VectorsPage() {
                 {transforming ? 'Queuing...' : 'Run transform'}
               </button>
               <button onClick={() => { setShowTransform(false); setSelectedId(null) }}
+                className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Delete shapefile</h2>
+            <p className="text-sm text-gray-400 mb-1">This will permanently delete:</p>
+            <p className="text-sm font-medium text-gray-700 mb-4">{deletingFilename}</p>
+            <p className="text-xs text-gray-400 mb-6">The file will be removed from GCS, GeoServer, PostGIS, and the database. This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={handleDelete}
+                className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors">
+                Delete permanently
+              </button>
+              <button onClick={() => { setShowDeleteConfirm(false); setDeletingId(null) }}
                 className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
@@ -323,16 +326,17 @@ export default function VectorsPage() {
                         <span className="text-xs text-gray-300">Busy...</span>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => { setSelectedId(v.id); setShowTransform(true) }}
+                          <button onClick={() => { setSelectedId(v.id); setShowTransform(true) }}
                             className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">
                             Transform
                           </button>
-                          <button
-                            onClick={() => handleDownload(v.id)}
-                            title="Download"
+                          <button onClick={() => handleDownload(v.id)} title="Download"
                             className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </button>
+                          <button onClick={() => { setDeletingId(v.id); setShowDeleteConfirm(true) }} title="Delete"
+                            className="text-gray-400 hover:text-red-500 cursor-pointer transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                           </button>
                         </div>
                       )}

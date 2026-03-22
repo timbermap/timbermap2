@@ -42,6 +42,8 @@ export default function ImagesPage() {
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showTransform, setShowTransform] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [transforming, setTransforming] = useState(false)
   const [transform, setTransform] = useState<TransformForm>({
     new_epsg: '', new_resolution_x: '', new_resolution_y: ''
@@ -50,10 +52,7 @@ export default function ImagesPage() {
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
   const fetchData = useCallback(async () => {
-    if (!isLoaded || !user) {
-      setLoading(false)
-      return
-    }
+    if (!isLoaded || !user) { setLoading(false); return }
     try {
       const [imgRes, jobsRes] = await Promise.all([
         fetch(`${API}/images/${user.id}`),
@@ -61,10 +60,7 @@ export default function ImagesPage() {
       ])
       const imgData = await imgRes.json()
       const jobsData = await jobsRes.json()
-
       setImages(imgData.images || [])
-
-      // Build set of image IDs that have an active (queued or running) job
       const active = new Set<string>()
       for (const job of (jobsData.jobs || []) as Job[]) {
         if (job.status === 'queued' || job.status === 'running') {
@@ -80,11 +76,7 @@ export default function ImagesPage() {
     }
   }, [user, isLoaded, API])
 
-  useEffect(() => {
-    if (isLoaded && user) fetchData()
-  }, [user, fetchData])
-
-  // Poll every 5s to keep job status fresh
+  useEffect(() => { if (isLoaded && user) fetchData() }, [user, fetchData])
   useEffect(() => {
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
@@ -97,16 +89,12 @@ export default function ImagesPage() {
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
     try {
       const res = await fetch(`${API}/upload/signed-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: item.file.name,
-          content_type: item.file.type || 'image/tiff',
-          clerk_id: user.id,
-          email: user.emailAddresses[0]?.emailAddress,
+          filename: item.file.name, content_type: item.file.type || 'image/tiff',
+          clerk_id: user.id, email: user.emailAddresses[0]?.emailAddress,
           username: user.username || user.firstName || user.id,
-          file_type: 'raster',
-          filesize: item.file.size,
+          file_type: 'raster', filesize: item.file.size,
         }),
       })
       const { url, gcs_path } = await res.json()
@@ -114,8 +102,7 @@ export default function ImagesPage() {
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable)
-            updateItem({ progress: Math.round((e.loaded / e.total) * 100) })
+          if (e.lengthComputable) updateItem({ progress: Math.round((e.loaded / e.total) * 100) })
         }
         xhr.onload = () => xhr.status === 200 ? resolve() : reject(xhr.statusText)
         xhr.onerror = () => reject('Upload failed')
@@ -125,14 +112,10 @@ export default function ImagesPage() {
       })
       updateItem({ message: 'Saving...' })
       await fetch(`${API}/upload/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clerk_id: user.id,
-          filename: item.file.name,
-          gcs_path,
-          filesize: item.file.size,
-          file_type: 'raster',
+          clerk_id: user.id, filename: item.file.name,
+          gcs_path, filesize: item.file.size, file_type: 'raster',
         }),
       })
       updateItem({ status: 'done', progress: 100, message: 'Done' })
@@ -144,9 +127,7 @@ export default function ImagesPage() {
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const items: UploadItem[] = files.map(f => ({
-      file: f, progress: 0, status: 'waiting', message: 'Waiting...'
-    }))
+    const items: UploadItem[] = files.map(f => ({ file: f, progress: 0, status: 'waiting', message: 'Waiting...' }))
     setUploads(items)
     await Promise.all(items.map((item, i) => uploadSingle(item, i)))
     await fetchData()
@@ -159,11 +140,9 @@ export default function ImagesPage() {
     setTransforming(true)
     try {
       await fetch(`${API}/images/transform`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clerk_id: user.id,
-          image_id: selectedId,
+          clerk_id: user.id, image_id: selectedId,
           new_epsg: transform.new_epsg || null,
           new_resolution_x: transform.new_resolution_x ? parseFloat(transform.new_resolution_x) : null,
           new_resolution_y: transform.new_resolution_y ? parseFloat(transform.new_resolution_y) : null,
@@ -178,6 +157,18 @@ export default function ImagesPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!user || !deletingId) return
+    try {
+      await fetch(`${API}/images/${deletingId}?clerk_id=${user.id}`, { method: 'DELETE' })
+      setShowDeleteConfirm(false)
+      setDeletingId(null)
+      await fetchData()
+    } catch (err) {
+      console.error('Delete failed', err)
+    }
+  }
+
   function formatSize(bytes: number | null) {
     if (!bytes) return '—'
     if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
@@ -189,27 +180,18 @@ export default function ImagesPage() {
     if (!user) return
     const res = await fetch(`${API}/images/${imageId}/download?clerk_id=${user.id}`)
     const data = await res.json()
-    if (data.url) {
-      const a = document.createElement('a')
-      a.href = data.url
-      a.download = ''
-      a.click()
-    }
+    if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
   const statusColor: Record<string, string> = {
-    uploaded:   'bg-blue-50 text-blue-700',
-    processing: 'bg-yellow-50 text-yellow-700',
-    ready:      'bg-green-50 text-green-700',
-    failed:     'bg-red-50 text-red-700',
+    uploaded: 'bg-blue-50 text-blue-700', processing: 'bg-yellow-50 text-yellow-700',
+    ready: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
+  }
+  const uploadColor: Record<string, string> = {
+    waiting: 'bg-gray-100', uploading: 'bg-[#2C5F45]', done: 'bg-green-500', error: 'bg-red-400',
   }
 
-  const uploadColor: Record<string, string> = {
-    waiting:   'bg-gray-100',
-    uploading: 'bg-[#2C5F45]',
-    done:      'bg-green-500',
-    error:     'bg-red-400',
-  }
+  const deletingFilename = images.find(i => i.id === deletingId)?.filename
 
   return (
     <div className="max-w-6xl">
@@ -219,8 +201,7 @@ export default function ImagesPage() {
           <h1 className="text-2xl font-semibold text-[#1C1C1C]">Images</h1>
           <p className="text-gray-400 mt-1 text-sm">Upload and manage your raster files</p>
         </div>
-        <button
-          onClick={() => fileRef.current?.click()}
+        <button onClick={() => fileRef.current?.click()}
           className="bg-[#2C5F45] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors">
           + Upload images
         </button>
@@ -251,6 +232,7 @@ export default function ImagesPage() {
         </div>
       )}
 
+      {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
@@ -260,22 +242,19 @@ export default function ImagesPage() {
               <div>
                 <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Reproject to EPSG</label>
                 <input type="text" placeholder="e.g. 4326 or 32718"
-                  value={transform.new_epsg}
-                  onChange={e => setTransform(t => ({...t, new_epsg: e.target.value}))}
+                  value={transform.new_epsg} onChange={e => setTransform(t => ({...t, new_epsg: e.target.value}))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution X (m)</label>
-                  <input type="number" placeholder="e.g. 0.5"
-                    value={transform.new_resolution_x}
+                  <input type="number" placeholder="e.g. 0.5" value={transform.new_resolution_x}
                     onChange={e => setTransform(t => ({...t, new_resolution_x: e.target.value}))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution Y (m)</label>
-                  <input type="number" placeholder="e.g. 0.5"
-                    value={transform.new_resolution_y}
+                  <input type="number" placeholder="e.g. 0.5" value={transform.new_resolution_y}
                     onChange={e => setTransform(t => ({...t, new_resolution_y: e.target.value}))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
@@ -287,6 +266,28 @@ export default function ImagesPage() {
                 {transforming ? 'Queuing...' : 'Run transform'}
               </button>
               <button onClick={() => { setShowTransform(false); setSelectedId(null) }}
+                className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Delete image</h2>
+            <p className="text-sm text-gray-400 mb-1">This will permanently delete:</p>
+            <p className="text-sm font-medium text-gray-700 mb-4">{deletingFilename}</p>
+            <p className="text-xs text-gray-400 mb-6">The file will be removed from GCS, GeoServer, and the database. This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={handleDelete}
+                className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors">
+                Delete permanently
+              </button>
+              <button onClick={() => { setShowDeleteConfirm(false); setDeletingId(null) }}
                 className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
@@ -347,16 +348,17 @@ export default function ImagesPage() {
                         <span className="text-xs text-gray-300">Busy...</span>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
+                          <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }}
                             className="text-xs text-[#2C5F45] hover:underline font-medium cursor-pointer">
                             Transform
                           </button>
-                          <button
-                            onClick={() => handleDownload(img.id)}
-                            title="Download"
+                          <button onClick={() => handleDownload(img.id)} title="Download"
                             className="text-gray-400 hover:text-[#2C5F45] cursor-pointer transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </button>
+                          <button onClick={() => { setDeletingId(img.id); setShowDeleteConfirm(true) }} title="Delete"
+                            className="text-gray-400 hover:text-red-500 cursor-pointer transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                           </button>
                         </div>
                       )}

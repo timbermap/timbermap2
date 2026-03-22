@@ -1,5 +1,6 @@
 import os
 import json
+import requests as http_requests
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,8 @@ app.add_middleware(
 
 app.include_router(webhook_router)
 app.include_router(stats_router, prefix="/stats", tags=["stats"])
+
+CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-788407107542.us-central1.run.app")
 
 class SignedUrlRequest(BaseModel):
     filename: str
@@ -103,9 +106,7 @@ def confirm_upload(req: ConfirmUploadRequest):
                 "gcs_path": req.gcs_path,
                 "filename": req.filename
             })
-            enqueue_raster_ingest(
-                str(job_id), str(file_id), req.gcs_path, req.filename
-            )
+            enqueue_raster_ingest(str(job_id), str(file_id), req.gcs_path, req.filename)
         else:
             file_id = insert_vector(user_id, req.filename, req.gcs_path, req.filesize)
             job_id = insert_job(user_id, "vector_ingest", {
@@ -113,9 +114,7 @@ def confirm_upload(req: ConfirmUploadRequest):
                 "gcs_path": req.gcs_path,
                 "filename": req.filename
             })
-            enqueue_vector_ingest(
-                str(job_id), str(file_id), req.gcs_path, req.filename
-            )
+            enqueue_vector_ingest(str(job_id), str(file_id), req.gcs_path, req.filename)
 
         return {"file_id": str(file_id), "job_id": str(job_id), "status": "queued"}
     except Exception as e:
@@ -192,10 +191,46 @@ def transform_vector(req: TransformVectorRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/images/{image_id}")
+def delete_image(image_id: str, clerk_id: str):
+    """Delete a raster image — verifies ownership then calls cleanup worker."""
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    images = get_images(user_id)
+    if not any(str(i["id"]) == image_id for i in images):
+        raise HTTPException(status_code=403, detail="Not authorized or not found")
+    try:
+        r = http_requests.delete(
+            f"{CLEANUP_WORKER_URL}/raster/{image_id}",
+            timeout=60,
+        )
+        r.raise_for_status()
+        return {"deleted": "image", "image_id": image_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/vectors/{vector_id}")
+def delete_vector(vector_id: str, clerk_id: str):
+    """Delete a vector — verifies ownership then calls cleanup worker."""
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    vectors = get_vectors(user_id)
+    if not any(str(v["id"]) == vector_id for v in vectors):
+        raise HTTPException(status_code=403, detail="Not authorized or not found")
+    try:
+        r = http_requests.delete(
+            f"{CLEANUP_WORKER_URL}/vector/{vector_id}",
+            timeout=60,
+        )
+        r.raise_for_status()
+        return {"deleted": "vector", "vector_id": vector_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/layers/{clerk_id}")
 def get_layers(clerk_id: str):
-    """Returns all map-ready layers for a user (images + vectors that are ready)"""
     user_id = get_user_id(clerk_id)
     if not user_id:
         return {"layers": []}
@@ -205,10 +240,8 @@ def get_layers(clerk_id: str):
         "https://timbermap-geoserver-788407107542.us-central1.run.app/geoserver"
     )
     workspace = "timbermap"
-
     images = get_images(user_id)
     vectors = get_vectors(user_id)
-
     layers = []
 
     for img in images:
@@ -235,10 +268,8 @@ def get_layers(clerk_id: str):
 
     return {"layers": layers}
 
-
 @app.get("/images/{image_id}/download")
 def download_image(image_id: str, clerk_id: str):
-    from datetime import timedelta
     user_id = get_user_id(clerk_id)
     if not user_id:
         raise HTTPException(status_code=404, detail="User not found")
@@ -250,19 +281,13 @@ def download_image(image_id: str, clerk_id: str):
         client = storage.Client()
         bucket = client.bucket(os.getenv("GCS_BUCKET"))
         blob = bucket.blob(img["gcs_path"])
-        url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(hours=1),
-            method="GET",
-        )
+        url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/vectors/{vector_id}/download")
 def download_vector(vector_id: str, clerk_id: str):
-    from datetime import timedelta
     user_id = get_user_id(clerk_id)
     if not user_id:
         raise HTTPException(status_code=404, detail="User not found")
@@ -274,11 +299,7 @@ def download_vector(vector_id: str, clerk_id: str):
         client = storage.Client()
         bucket = client.bucket(os.getenv("GCS_BUCKET"))
         blob = bucket.blob(vec["gcs_path"])
-        url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(hours=1),
-            method="GET",
-        )
+        url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
