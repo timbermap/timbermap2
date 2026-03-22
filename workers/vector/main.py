@@ -1,16 +1,6 @@
 """
 workers/vector/main.py
 Vector ingest + PostGIS worker.
-
-New vs original:
-  • /ingest   — publishes layer to GeoServer after PostGIS load,
-                writes geoserver_layer to vectors table.
-  • /transform — reprojects via gdf.to_crs(), replaces PostGIS table,
-                 re-registers GeoServer layer, updates DB.
-
-Env vars added:
-    GEOSERVER_URL       GeoServer Cloud Run URL
-    GEOSERVER_PASSWORD  from Secret Manager geoserver-password
 """
 
 import os
@@ -26,8 +16,6 @@ from shapely.validation import make_valid
 from shapely.geometry import MultiPolygon
 from db import get_conn
 
-from geoserver import publish_vector_layer
-
 load_dotenv()
 
 app = FastAPI(title="Timbermap Vector Worker")
@@ -41,8 +29,8 @@ def update_job(job_id: str, status: str, message: str):
     cur.execute(
         """
         UPDATE jobs
-        SET status     = %s,
-            message    = %s,
+        SET status      = %s,
+            message     = %s,
             started_at  = CASE WHEN status = 'queued' THEN NOW() ELSE started_at END,
             finished_at = CASE WHEN %s IN ('done','failed') THEN NOW() ELSE NULL END
         WHERE id = %s
@@ -84,8 +72,7 @@ def publish_status(job_id: str, status: str, message: str):
 # ── GCS helpers ───────────────────────────────────────────────────────────────
 
 def download_from_gcs(gcs_path: str, local_path: str):
-    client = storage.Client()
-    client.bucket(os.getenv("GCS_BUCKET")).blob(gcs_path).download_to_filename(local_path)
+    storage.Client().bucket(os.getenv("GCS_BUCKET")).blob(gcs_path).download_to_filename(local_path)
 
 
 # ── PostGIS helpers ───────────────────────────────────────────────────────────
@@ -117,17 +104,8 @@ def load_from_postgis(schema: str, table: str) -> gpd.GeoDataFrame:
     engine = _build_engine()
     return gpd.read_postgis(
         f'SELECT * FROM "{schema}"."{table}"',
-        engine,
-        geom_col="geometry",
+        engine, geom_col="geometry",
     )
-
-
-def drop_postgis_table(schema: str, table: str):
-    from sqlalchemy import text
-    engine = _build_engine()
-    with engine.connect() as conn:
-        conn.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))
-        conn.commit()
 
 
 # ── Geometry helpers ──────────────────────────────────────────────────────────
@@ -142,10 +120,8 @@ def repair_geometry(gdf: gpd.GeoDataFrame) -> tuple:
         if not geom.is_valid:
             fixed = make_valid(geom)
             if fixed.geom_type == "GeometryCollection":
-                polys = [g for g in fixed.geoms
-                         if g.geom_type in ("Polygon", "MultiPolygon")]
-                fixed = (MultiPolygon(polys) if len(polys) > 1
-                         else (polys[0] if polys else geom))
+                polys = [g for g in fixed.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+                fixed = MultiPolygon(polys) if len(polys) > 1 else (polys[0] if polys else geom)
             repaired.append(fixed)
             fixed_count += 1
         else:
@@ -165,8 +141,7 @@ def read_shapefile(zip_path: str) -> gpd.GeoDataFrame:
             shp_files = [
                 os.path.join(root, f)
                 for root, _, files in os.walk(tmpdir)
-                for f in files
-                if f.endswith(".shp")
+                for f in files if f.endswith(".shp")
             ]
             if not shp_files:
                 raise ValueError("No .shp file found in zip")
@@ -202,7 +177,7 @@ class IngestJob(BaseModel):
 class TransformJob(BaseModel):
     job_id: str
     vector_id: str
-    target_epsg: str   # e.g. "32614"
+    target_epsg: str
 
 
 @app.get("/health")
@@ -217,13 +192,11 @@ async def ingest_vector(job: IngestJob):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, job.filename)
-
         try:
             download_from_gcs(job.gcs_path, zip_path)
 
             update_job(job.job_id, "running", "Reading shapefile...")
             gdf = read_shapefile(zip_path)
-
             if gdf.crs is None:
                 gdf = gdf.set_crs("EPSG:4326")
             epsg = str(gdf.crs.to_epsg()) if gdf.crs.to_epsg() else str(gdf.crs)
@@ -231,8 +204,7 @@ async def ingest_vector(job: IngestJob):
             invalid_count = int((~gdf.geometry.is_valid).sum())
             fixed_count = 0
             if invalid_count > 0:
-                update_job(job.job_id, "running",
-                           f"Repairing {invalid_count} invalid geometries...")
+                update_job(job.job_id, "running", f"Repairing {invalid_count} invalid geometries...")
                 gdf, fixed_count = repair_geometry(gdf)
                 gdf = gdf[~gdf.geometry.is_empty & gdf.geometry.notna()]
 
@@ -245,14 +217,6 @@ async def ingest_vector(job: IngestJob):
             tbl = table_name_for(job.vector_id)
             push_to_postgis(gdf, "vectors", tbl)
 
-            # Publish to GeoServer (best-effort — non-fatal)
-            geoserver_layer = None
-            try:
-                update_job(job.job_id, "running", "Publishing to GeoServer...")
-                geoserver_layer = publish_vector_layer(job.vector_id, tbl, epsg)
-            except Exception as geo_err:
-                print(f"GeoServer publish skipped: {geo_err}")
-
             repair_note = f" ({fixed_count} geometries repaired)" if fixed_count else ""
             update_vector(
                 job.vector_id,
@@ -260,22 +224,14 @@ async def ingest_vector(job: IngestJob):
                 epsg=epsg,
                 geometry_type=geometry_type,
                 area_ha=area_ha,
-                geoserver_layer=geoserver_layer,
+                geoserver_layer=None,
             )
 
             msg = f"Ingest complete{repair_note}"
             update_job(job.job_id, "done", msg)
             publish_status(job.job_id, "done", msg)
-
-            return {
-                "status": "done",
-                "epsg": epsg,
-                "geometry_type": geometry_type,
-                "area_ha": area_ha,
-                "features": len(gdf),
-                "geometries_repaired": fixed_count,
-                "geoserver_layer": geoserver_layer,
-            }
+            return {"status": "done", "epsg": epsg, "geometry_type": geometry_type,
+                    "area_ha": area_ha, "features": len(gdf), "geometries_repaired": fixed_count}
 
         except Exception as e:
             update_job(job.job_id, "failed", str(e))
@@ -286,65 +242,32 @@ async def ingest_vector(job: IngestJob):
 
 @app.post("/transform")
 async def transform_vector(job: TransformJob):
-    """
-    Reproject an existing vector to a new CRS.
-    Loads the PostGIS table, reprojects via gdf.to_crs(), replaces the table,
-    re-registers the GeoServer layer, and updates DB metadata.
-    """
     update_job(job.job_id, "running", "Starting vector transform...")
     publish_status(job.job_id, "running", "Starting vector transform...")
 
     try:
         tbl = table_name_for(job.vector_id)
 
-        # 1. Load from PostGIS
         update_job(job.job_id, "running", "Loading from PostGIS...")
         gdf = load_from_postgis("vectors", tbl)
-
         if gdf.crs is None:
             gdf = gdf.set_crs("EPSG:4326")
 
-        # 2. Reproject
         update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
-        target_crs = f"EPSG:{job.target_epsg}"
-        gdf = gdf.to_crs(target_crs)
-
+        gdf = gdf.to_crs(f"EPSG:{job.target_epsg}")
         new_epsg = str(gdf.crs.to_epsg()) if gdf.crs.to_epsg() else job.target_epsg
         area_ha  = get_area_ha(gdf)
 
-        # 3. Replace PostGIS table (same name — just replace in-place)
         update_job(job.job_id, "running", "Saving reprojected data to PostGIS...")
         push_to_postgis(gdf, "vectors", tbl)
 
-        # 4. Re-publish GeoServer layer (best-effort — non-fatal)
-        geoserver_layer = None
-        try:
-            update_job(job.job_id, "running", "Updating GeoServer layer...")
-            from geoserver import delete_vector_layer
-            delete_vector_layer(job.vector_id)
-            geoserver_layer = publish_vector_layer(job.vector_id, tbl, new_epsg)
-        except Exception as geo_err:
-            print(f"GeoServer publish skipped: {geo_err}")
-
-        # 5. Update DB
-        update_vector(
-            job.vector_id,
-            status="ready",
-            epsg=new_epsg,
-            area_ha=area_ha,
-            geoserver_layer=geoserver_layer,
-        )
+        update_vector(job.vector_id, status="ready", epsg=new_epsg,
+                      area_ha=area_ha, geoserver_layer=None)
 
         msg = f"Transform complete → EPSG:{new_epsg}"
         update_job(job.job_id, "done", msg)
         publish_status(job.job_id, "done", msg)
-
-        return {
-            "status": "done",
-            "epsg": new_epsg,
-            "area_ha": area_ha,
-            "geoserver_layer": geoserver_layer,
-        }
+        return {"status": "done", "epsg": new_epsg, "area_ha": area_ha}
 
     except Exception as e:
         update_job(job.job_id, "failed", str(e))
