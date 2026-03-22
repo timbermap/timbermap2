@@ -89,33 +89,57 @@ function LayerPopover({
       {/* Backdrop to close */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="fixed z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-52"
-        style={{ top, left }}
+        className="fixed z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"
+        style={{ top, left, width: 220 }}
         onClick={e => e.stopPropagation()}
       >
-        <p className="text-xs font-semibold text-gray-700 truncate mb-3">{layer.name}</p>
+        {/* Header */}
+        <div className="px-4 pt-3 pb-2 border-b border-gray-50">
+          <p className="text-xs font-semibold text-gray-800 truncate">{layer.name}</p>
+          <p className="text-xs text-gray-400 mt-0.5">EPSG: {layer.epsg || '—'}</p>
+        </div>
 
-        {/* Opacity slider */}
-        <div className="mb-3">
-          <div className="flex justify-between mb-1.5">
-            <span className="text-xs text-gray-400">Opacity</span>
-            <span className="text-xs font-medium text-gray-600">{Math.round(layer.opacity * 100)}%</span>
+        {/* Opacity */}
+        <div className="px-4 py-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs font-medium text-gray-500">Opacity</span>
+            <span className="text-xs font-semibold text-[#2C5F45] tabular-nums">{Math.round(layer.opacity * 100)}%</span>
           </div>
-          <input
-            type="range" min={0} max={1} step={0.05}
-            value={layer.opacity}
-            onChange={e => onOpacityChange(layer.id, parseFloat(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-            style={{ accentColor: '#2C5F45' }}
-          />
+          {/* Track + thumb */}
+          <div className="relative h-5 flex items-center">
+            {/* Background track */}
+            <div className="absolute w-full h-1.5 rounded-full bg-gray-100" />
+            {/* Filled track */}
+            <div
+              className="absolute h-1.5 rounded-full bg-[#2C5F45]"
+              style={{ width: `${layer.opacity * 100}%` }}
+            />
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={layer.opacity}
+              onChange={e => onOpacityChange(layer.id, parseFloat(e.target.value))}
+              className="absolute w-full opacity-0 cursor-pointer h-5"
+              style={{ margin: 0 }}
+            />
+            {/* Thumb indicator */}
+            <div
+              className="absolute w-3.5 h-3.5 rounded-full bg-white border-2 border-[#2C5F45] shadow-sm pointer-events-none"
+              style={{ left: `calc(${layer.opacity * 100}% - 7px)` }}
+            />
+          </div>
+          {/* Min/max labels */}
+          <div className="flex justify-between mt-1">
+            <span className="text-xs text-gray-300">0%</span>
+            <span className="text-xs text-gray-300">100%</span>
+          </div>
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col gap-0.5 border-t border-gray-50 pt-2">
-          {layer.bbox && (
+        {layer.bbox && (
+          <div className="border-t border-gray-50 px-2 pb-2">
             <button
               onClick={() => { onZoomTo(layer); onClose() }}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors w-full text-left"
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-xs text-gray-600 hover:bg-[#EDF4F0] hover:text-[#2C5F45] transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -123,9 +147,8 @@ function LayerPopover({
               </svg>
               Zoom to layer
             </button>
-          )}
-          <div className="px-2 py-1 text-xs text-gray-300">EPSG: {layer.epsg || '—'}</div>
-        </div>
+          </div>
+        )}
       </div>
     </>
   )
@@ -142,7 +165,7 @@ function LayerAccordion({
   onZoomTo: (layer: Layer) => void
   onOpacityChange: (id: string, opacity: number) => void
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [activePopover, setActivePopover] = useState<string | null>(null)
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
