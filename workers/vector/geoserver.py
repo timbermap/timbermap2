@@ -241,27 +241,12 @@ def delete_vector_layer(vector_id: str) -> None:
     log.info("GeoServer vector layer deleted: %s", table_name)
 
 
-# ── GCS signed URL helper ─────────────────────────────────────────────────────
+# ── GCS URL helper ───────────────────────────────────────────────────────────
 
 def generate_cog_signed_url(gcs_path: str, bucket_name: str,
                              expiry_seconds: int = 604800) -> str:
-    import google.auth
-    import google.auth.transport.requests
-    from google.cloud import storage as gcs
-
-    credentials, _ = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-    credentials.refresh(google.auth.transport.requests.Request())
-
-    client = gcs.Client(credentials=credentials)
-    blob = client.bucket(bucket_name).blob(gcs_path)
-
-    url = blob.generate_signed_url(
-        version="v4",
-        expiration=expiry_seconds,
-        method="GET",
-        service_account_email=getattr(credentials, "service_account_email", None),
-        access_token=credentials.token,
-    )
-    return url
+    """
+    Returns a gs:// URI for use with GeoServer + GCS Community Plugin.
+    GeoServer reads the COG directly from GCS using the service account credentials.
+    """
+    return f"gs://{bucket_name}/{gcs_path}"
