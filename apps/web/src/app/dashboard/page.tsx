@@ -7,12 +7,27 @@ const actions = [
   { label: 'Run a model', href: '/dashboard/models' },
 ]
 
-const stats = [
-  { label: 'Images', value: 0, sub: 'rasters uploaded' },
-  { label: 'Vectors', value: 0, sub: 'shapefiles uploaded' },
-  { label: 'Jobs', value: 0, sub: 'processes run' },
-  { label: 'Models', value: 0, sub: 'available to you' },
-]
+const statusColor: Record<string, string> = {
+  queued:  'bg-gray-100 text-gray-600',
+  running: 'bg-blue-50 text-blue-700',
+  done:    'bg-green-50 text-green-700',
+  failed:  'bg-red-50 text-red-700',
+}
+
+const typeLabel: Record<string, string> = {
+  raster_ingest:    'Raster ingest',
+  vector_ingest:    'Vector ingest',
+  raster_transform: 'Image transform',
+  vector_transform: 'Vector transform',
+  model_run:        'Model run',
+  delete:           'Delete',
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleString()
+}
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
 
 export default async function Dashboard() {
   const { userId } = await auth()
@@ -20,6 +35,24 @@ export default async function Dashboard() {
 
   const user = await currentUser()
   const name = user?.firstName || user?.emailAddresses[0]?.emailAddress
+
+  // Fetch stats and recent jobs in parallel
+  const [statsRes, jobsRes] = await Promise.all([
+    fetch(`${API}/stats/${userId}`, { cache: 'no-store' }).catch(() => null),
+    fetch(`${API}/jobs/${userId}`, { cache: 'no-store' }).catch(() => null),
+  ])
+
+  const statsData = statsRes?.ok ? await statsRes.json() : null
+  const jobsData  = jobsRes?.ok  ? await jobsRes.json()  : null
+
+  const stats = [
+    { label: 'Images',  value: statsData?.images  ?? 0, sub: 'rasters uploaded' },
+    { label: 'Vectors', value: statsData?.vectors  ?? 0, sub: 'shapefiles uploaded' },
+    { label: 'Jobs',    value: statsData?.jobs     ?? 0, sub: 'processes run' },
+    { label: 'Models',  value: statsData?.models   ?? 0, sub: 'available to you' },
+  ]
+
+  const recentJobs = (jobsData?.jobs ?? []).slice(0, 5)
 
   return (
     <div className="max-w-6xl">
@@ -48,19 +81,43 @@ export default async function Dashboard() {
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-4">Recent jobs</p>
-          <p className="text-sm text-gray-300">No jobs run yet.</p>
+          {recentJobs.length === 0 ? (
+            <p className="text-sm text-gray-300">No jobs run yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentJobs.map((job: {
+                id: string
+                type: string
+                status: string
+                created_at: string
+                input_ref: Record<string, unknown> | null
+              }) => (
+                <div key={job.id} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">{typeLabel[job.type] || job.type}</p>
+                    <p className="text-xs text-gray-400">{formatDate(job.created_at)}</p>
+                  </div>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[job.status] || 'bg-gray-50 text-gray-500'}`}>
+                    {job.status}
+                  </span>
+                </div>
+              ))}
+              <a href="/dashboard/jobs" className="text-xs text-[#2C5F45] hover:underline block pt-1">
+                View all jobs →
+              </a>
+            </div>
+          )}
         </div>
+
         <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-4">Quick actions</p>
           <div className="space-y-3">
-            {actions.map(action => {
-              return (
-                <a key={action.href} href={action.href} className="flex items-center justify-between group py-1">
-                  <span className="text-sm text-gray-600 group-hover:text-[#2C5F45] transition-colors">{action.label}</span>
-                  <span className="text-sm transition-transform group-hover:translate-x-1" style={{color:'#5A9E7C'}}>→</span>
-                </a>
-              )
-            })}
+            {actions.map(action => (
+              <a key={action.href} href={action.href} className="flex items-center justify-between group py-1">
+                <span className="text-sm text-gray-600 group-hover:text-[#2C5F45] transition-colors">{action.label}</span>
+                <span className="text-sm transition-transform group-hover:translate-x-1" style={{color:'#5A9E7C'}}>→</span>
+              </a>
+            ))}
           </div>
         </div>
       </div>
