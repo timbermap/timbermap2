@@ -4,21 +4,23 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl, { StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-// @ts-expect-error - no types for maplibre-gl-draw
+// @ts-expect-error - no types
 import MapboxDraw from '@mapbox/mapbox-gl-draw'
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css'
+
+// COG protocol for reading Cloud-Optimized GeoTIFFs directly
+// @ts-expect-error - no types
+import { cogProtocol } from '@geomatico/maplibre-cog-protocol'
 
 type Layer = {
   id: string
   name: string
-  type: 'raster' | 'vector' | 'model_result'
-  layer: string
-  wms_url: string
+  type: 'raster' | 'vector'
+  cog_url?: string       // for rasters
+  tiles_url?: string     // for vectors (MVT)
   epsg: string | null
   visible: boolean
 }
-
-type FeatureProps = Record<string, string | number | boolean | null>
 
 type AOIFeature = {
   id: string
@@ -29,9 +31,7 @@ type AOIFeature = {
 function makeBasemap(tileUrl: string, attribution: string): StyleSpecification {
   return {
     version: 8,
-    sources: {
-      basemap: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution }
-    },
+    sources: { basemap: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution } },
     layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }]
   }
 }
@@ -54,37 +54,6 @@ const BASEMAPS = [
   },
 ]
 
-async function getFeatureInfo(
-  wmsUrl: string, layerName: string,
-  lngLat: maplibregl.LngLat, map: maplibregl.Map
-): Promise<FeatureProps | null> {
-  const canvas = map.getCanvas()
-  const W = canvas.width, H = canvas.height
-  const bounds = map.getBounds()
-  const point = map.project(lngLat)
-
-  const params = new URLSearchParams({
-    SERVICE: 'WMS', VERSION: '1.1.1', REQUEST: 'GetFeatureInfo',
-    LAYERS: layerName, QUERY_LAYERS: layerName,
-    BBOX: `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
-    WIDTH: String(W), HEIGHT: String(H), SRS: 'EPSG:4326',
-    INFO_FORMAT: 'application/json',
-    X: String(Math.round(point.x)), Y: String(Math.round(point.y)),
-    FEATURE_COUNT: '1',
-  })
-
-  try {
-    const res = await fetch(`${wmsUrl}?${params}`)
-    if (!res.ok) return null
-    const json = await res.json()
-    const features = json?.features
-    if (!features || features.length === 0) return null
-    return features[0].properties as FeatureProps
-  } catch {
-    return null
-  }
-}
-
 function calcAreaKm2(coords: number[][]): number {
   const R = 6371
   let area = 0
@@ -97,8 +66,6 @@ function calcAreaKm2(coords: number[][]): number {
     (Math.PI / 180) * R * (Math.PI / 180) * R *
     Math.cos((latMid * Math.PI) / 180) * 100) / 100
 }
-
-// ── Layer section component ───────────────────────────────────────────────────
 
 function LayerSection({
   title, icon, layers, onToggleLayer
@@ -120,8 +87,7 @@ function LayerSection({
       </div>
       <div className="space-y-0.5">
         {layers.map(layer => (
-          <div
-            key={layer.id}
+          <div key={layer.id}
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"
             onClick={() => onToggleLayer(layer.id)}>
             <div className={`w-3.5 h-3.5 rounded border-2 flex-shrink-0 transition-colors ${
@@ -138,7 +104,8 @@ function LayerSection({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// Vector layer colors — cycle through these
+const VECTOR_COLORS = ['#2C5F45', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
 
 export default function MapPage() {
   const { user, isLoaded } = useUser()
@@ -146,40 +113,29 @@ export default function MapPage() {
   const map          = useRef<maplibregl.Map | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const draw         = useRef<any>(null)
-  const popup        = useRef<maplibregl.Popup | null>(null)
 
-  const [layers,         setLayers]         = useState<Layer[]>([])
-  const [basemap,        setBasemap]         = useState('satellite')
-  const [mapReady,       setMapReady]        = useState(false)
-  const [drawMode,       setDrawMode]        = useState(false)
-  const [aoi,            setAoi]             = useState<AOIFeature | null>(null)
-  const [loadingFeature, setLoadingFeature]  = useState(false)
+  const [layers,    setLayers]    = useState<Layer[]>([])
+  const [basemap,   setBasemap]   = useState('satellite')
+  const [mapReady,  setMapReady]  = useState(false)
+  const [drawMode,  setDrawMode]  = useState(false)
+  const [aoi,       setAoi]       = useState<AOIFeature | null>(null)
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
 
-  // ── Fetch layers ────────────────────────────────────────────────────────────
   const fetchLayers = useCallback(async () => {
     if (!isLoaded || !user) return
     try {
       const res  = await fetch(`${API}/layers/${user.id}`)
       const data = await res.json()
-      const incoming: Layer[] = (data.layers || []).map((l: Omit<Layer, 'visible'>) => ({
-        ...l, visible: true
-      }))
-      // Preserve existing visibility state for layers already loaded
       setLayers(prev => {
         const visMap = new Map(prev.map(l => [l.id, l.visible]))
-        return incoming.map(l => ({
-          ...l,
-          visible: visMap.has(l.id) ? visMap.get(l.id)! : true
+        return (data.layers || []).map((l: Omit<Layer, 'visible'>) => ({
+          ...l, visible: visMap.has(l.id) ? visMap.get(l.id)! : true
         }))
       })
-    } catch {
-      // non-fatal
-    }
+    } catch { /* non-fatal */ }
   }, [user, isLoaded, API])
 
-  // ── Fetch layers on user ready ──────────────────────────────────────────────
   useEffect(() => {
     if (isLoaded && user) fetchLayers()
   }, [user, isLoaded, fetchLayers])
@@ -187,6 +143,9 @@ export default function MapPage() {
   // ── Init map ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || map.current) return
+
+    // Register COG protocol for reading GeoTIFFs directly
+    maplibregl.addProtocol('cog', cogProtocol)
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
@@ -230,80 +189,71 @@ export default function MapPage() {
       setTimeout(() => draw.current.changeMode('simple_select'), 0)
       setDrawMode(false)
     })
-
     map.current.on('draw.delete', () => { setAoi(null); setDrawMode(false) })
     map.current.on('load', () => setMapReady(true))
 
-    return () => { map.current?.remove(); map.current = null }
+    return () => {
+      maplibregl.removeProtocol('cog')
+      map.current?.remove()
+      map.current = null
+    }
   }, [])
 
-  // ── Map click → WMS GetFeatureInfo ──────────────────────────────────────────
+  // ── Sync layers to map ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!map.current || !mapReady) return
 
-    const handleClick = async (e: maplibregl.MapMouseEvent) => {
-      if (drawMode) return
-      popup.current?.remove()
+    layers.forEach((layer, idx) => {
+      const sourceId = `source-${layer.id}`
+      const layerId  = `layer-${layer.id}`
+      const visibility = layer.visible ? 'visible' : 'none'
 
-      const visibleLayers = layers.filter(l => l.visible && l.type !== 'raster')
-      if (visibleLayers.length === 0) return
-
-      setLoadingFeature(true)
-
-      for (const layer of visibleLayers) {
-        const props = await getFeatureInfo(layer.wms_url, layer.layer, e.lngLat, map.current!)
-        if (props && Object.keys(props).length > 0) {
-          setLoadingFeature(false)
-          popup.current = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' })
-            .setLngLat(e.lngLat)
-            .setHTML(`
-              <div style="font-family:Inter,sans-serif;font-size:12px;max-height:220px;overflow-y:auto">
-                <p style="font-weight:600;color:#1F3D2C;margin:0 0 8px">${layer.name}</p>
-                <table style="width:100%;border-collapse:collapse">
-                  ${Object.entries(props)
-                    .filter(([k]) => !['geometry', 'geom', 'the_geom'].includes(k))
-                    .map(([k, v]) => `
-                      <tr>
-                        <td style="padding:2px 8px 2px 0;color:#6B7280;font-weight:500;white-space:nowrap">${k}</td>
-                        <td style="padding:2px 0;color:#1C1C1C">${v ?? '—'}</td>
-                      </tr>`).join('')}
-                </table>
-              </div>
-            `)
-            .addTo(map.current!)
-          return
+      if (layer.type === 'raster' && layer.cog_url) {
+        if (!map.current!.getSource(sourceId)) {
+          // Use COG protocol — reads GeoTIFF directly with range requests
+          map.current!.addSource(sourceId, {
+            type: 'raster',
+            url: `cog://${layer.cog_url.replace('https://', '')}`,
+            tileSize: 256,
+          })
+          map.current!.addLayer({
+            id: layerId, type: 'raster', source: sourceId,
+            paint: { 'raster-opacity': 0.85 },
+            layout: { visibility },
+          })
+        } else {
+          map.current!.setLayoutProperty(layerId, 'visibility', visibility)
         }
       }
-      setLoadingFeature(false)
-    }
 
-    map.current.on('click', handleClick)
-    return () => { map.current?.off('click', handleClick) }
-  }, [mapReady, layers, drawMode])
+      if (layer.type === 'vector' && layer.tiles_url) {
+        const color = VECTOR_COLORS[idx % VECTOR_COLORS.length]
+        const fillId   = `${layerId}-fill`
+        const strokeId = `${layerId}-stroke`
 
-  // ── Sync WMS layers to map ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!map.current || !mapReady) return
-    layers.forEach(layer => {
-      const sourceId = `wms-${layer.id}`
-      const layerId  = `layer-${layer.id}`
-      if (!map.current!.getSource(sourceId)) {
-        map.current!.addSource(sourceId, {
-          type: 'raster',
-          tiles: [
-            `${layer.wms_url}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap` +
-            `&LAYERS=${layer.layer}&BBOX={bbox-epsg-3857}` +
-            `&WIDTH=256&HEIGHT=256&SRS=EPSG:3857&FORMAT=image/png&TRANSPARENT=true`
-          ],
-          tileSize: 256,
-        })
-        map.current!.addLayer({
-          id: layerId, type: 'raster', source: sourceId,
-          paint: { 'raster-opacity': 0.85 },
-          layout: { visibility: layer.visible ? 'visible' : 'none' },
-        })
-      } else {
-        map.current!.setLayoutProperty(layerId, 'visibility', layer.visible ? 'visible' : 'none')
+        if (!map.current!.getSource(sourceId)) {
+          map.current!.addSource(sourceId, {
+            type: 'vector',
+            tiles: [layer.tiles_url],
+            minzoom: 0,
+            maxzoom: 14,
+          })
+          // Fill layer
+          map.current!.addLayer({
+            id: fillId, type: 'fill', source: sourceId, 'source-layer': 'layer',
+            paint: { 'fill-color': color, 'fill-opacity': 0.3 },
+            layout: { visibility },
+          })
+          // Stroke layer
+          map.current!.addLayer({
+            id: strokeId, type: 'line', source: sourceId, 'source-layer': 'layer',
+            paint: { 'line-color': color, 'line-width': 1.5 },
+            layout: { visibility },
+          })
+        } else {
+          map.current!.setLayoutProperty(fillId, 'visibility', visibility)
+          map.current!.setLayoutProperty(strokeId, 'visibility', visibility)
+        }
       }
     })
   }, [layers, mapReady])
@@ -326,20 +276,16 @@ export default function MapPage() {
       setTimeout(() => draw.current.changeMode('simple_select'), 0)
       setDrawMode(false)
     } else {
-      draw.current.deleteAll()
-      setAoi(null)
-      draw.current.changeMode('draw_polygon')
-      setDrawMode(true)
+      draw.current.deleteAll(); setAoi(null)
+      draw.current.changeMode('draw_polygon'); setDrawMode(true)
     }
   }
 
   function clearAoi() { draw.current?.deleteAll(); setAoi(null); setDrawMode(false) }
   function copyAoi() { if (aoi) navigator.clipboard.writeText(JSON.stringify(aoi.geometry, null, 2)) }
 
-  const imageLayers       = layers.filter(l => l.type === 'raster')
-  const vectorLayers      = layers.filter(l => l.type === 'vector')
-  const modelResultLayers = layers.filter(l => l.type === 'model_result')
-  const hasLayers         = layers.length > 0
+  const imageLayers  = layers.filter(l => l.type === 'raster')
+  const vectorLayers = layers.filter(l => l.type === 'vector')
 
   return (
     <div className="flex h-[calc(100vh-2rem)] -m-10 overflow-hidden rounded-xl">
@@ -351,7 +297,7 @@ export default function MapPage() {
           <h2 className="text-base font-semibold text-[#1C1C1C] mt-0.5">Layers</h2>
         </div>
 
-        {/* Basemap selector */}
+        {/* Basemap */}
         <div className="px-5 py-3 border-b border-gray-100">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-2">Basemap</p>
           <div className="space-y-1">
@@ -366,36 +312,22 @@ export default function MapPage() {
           </div>
         </div>
 
-        {/* Data layers — grouped */}
+        {/* Data layers */}
         <div className="flex-1 overflow-y-auto px-3 py-3">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-2 px-2">Data layers</p>
-
-          {!hasLayers ? (
+          {layers.length === 0 ? (
             <p className="text-xs text-gray-300 px-3 mt-2">
               No layers yet. Upload and process images or vectors first.
             </p>
           ) : (
             <>
-              <LayerSection
-                title="Images" icon="🛰️"
-                layers={imageLayers}
-                onToggleLayer={toggleLayer}
-              />
-              <LayerSection
-                title="Vectors" icon="📐"
-                layers={vectorLayers}
-                onToggleLayer={toggleLayer}
-              />
-              <LayerSection
-                title="Model Results" icon="🤖"
-                layers={modelResultLayers}
-                onToggleLayer={toggleLayer}
-              />
+              <LayerSection title="Images" icon="🛰️" layers={imageLayers} onToggleLayer={toggleLayer} />
+              <LayerSection title="Vectors" icon="📐" layers={vectorLayers} onToggleLayer={toggleLayer} />
             </>
           )}
         </div>
 
-        {/* AOI section */}
+        {/* AOI */}
         <div className="px-5 py-3 border-t border-gray-100">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-2">AOI</p>
           {aoi ? (
@@ -439,7 +371,6 @@ export default function MapPage() {
       {/* ── Map ──────────────────────────────────────────────────────────── */}
       <div className="flex-1 relative">
         <div ref={mapContainer} className="w-full h-full" />
-
         {!mapReady && (
           <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
             <div className="flex items-center gap-3">
@@ -448,14 +379,6 @@ export default function MapPage() {
             </div>
           </div>
         )}
-
-        {loadingFeature && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white shadow-md rounded-full px-4 py-2 flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full border-2 border-[#2C5F45] border-t-transparent animate-spin" />
-            <p className="text-xs text-gray-500">Loading feature info...</p>
-          </div>
-        )}
-
         {drawMode && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#2C5F45] text-white shadow-md rounded-full px-4 py-2">
             <p className="text-xs font-medium">Drawing mode — click to place points, double-click to finish</p>

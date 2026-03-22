@@ -2,7 +2,7 @@ import os
 import json
 import requests as http_requests
 from datetime import timedelta
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import storage
 from pydantic import BaseModel
@@ -38,6 +38,21 @@ app.include_router(webhook_router)
 app.include_router(stats_router, prefix="/stats", tags=["stats"])
 
 CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-788407107542.us-central1.run.app")
+GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
+
+
+def get_db_conn():
+    import psycopg2
+    import psycopg2.extras
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "127.0.0.1"),
+        port=os.getenv("DB_PORT", 5432),
+        dbname=os.getenv("DB_NAME", "timbermap"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD"),
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
+
 
 class SignedUrlRequest(BaseModel):
     filename: str
@@ -67,30 +82,28 @@ class TransformVectorRequest(BaseModel):
     vector_id: str
     new_epsg: str
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "timbermap-api"}
+
 
 @app.post("/upload/signed-url")
 def get_signed_url(req: SignedUrlRequest):
     try:
         ensure_user(req.clerk_id, req.email, req.username)
         client = storage.Client()
-        bucket = client.bucket(os.getenv("GCS_BUCKET"))
+        bucket = client.bucket(GCS_BUCKET)
         folder = "rasters" if req.file_type == "raster" else "vectors"
         blob = bucket.blob(f"users/{req.clerk_id}/{folder}/{req.filename}")
         url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(hours=2),
-            method="PUT",
-            content_type=req.content_type,
+            version="v4", expiration=timedelta(hours=2),
+            method="PUT", content_type=req.content_type,
         )
-        return {
-            "url": url,
-            "gcs_path": f"users/{req.clerk_id}/{folder}/{req.filename}"
-        }
+        return {"url": url, "gcs_path": f"users/{req.clerk_id}/{folder}/{req.filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/upload/confirm")
 def confirm_upload(req: ConfirmUploadRequest):
@@ -98,27 +111,22 @@ def confirm_upload(req: ConfirmUploadRequest):
         user_id = get_user_id(req.clerk_id)
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
-
         if req.file_type == "raster":
             file_id = insert_image(user_id, req.filename, req.gcs_path, req.filesize)
             job_id = insert_job(user_id, "raster_ingest", {
-                "image_id": str(file_id),
-                "gcs_path": req.gcs_path,
-                "filename": req.filename
+                "image_id": str(file_id), "gcs_path": req.gcs_path, "filename": req.filename
             })
             enqueue_raster_ingest(str(job_id), str(file_id), req.gcs_path, req.filename)
         else:
             file_id = insert_vector(user_id, req.filename, req.gcs_path, req.filesize)
             job_id = insert_job(user_id, "vector_ingest", {
-                "vector_id": str(file_id),
-                "gcs_path": req.gcs_path,
-                "filename": req.filename
+                "vector_id": str(file_id), "gcs_path": req.gcs_path, "filename": req.filename
             })
             enqueue_vector_ingest(str(job_id), str(file_id), req.gcs_path, req.filename)
-
         return {"file_id": str(file_id), "job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/images/{clerk_id}")
 def list_images(clerk_id: str):
@@ -131,6 +139,7 @@ def list_images(clerk_id: str):
             img['created_at'] = img['created_at'].isoformat()
     return {"images": images}
 
+
 @app.get("/vectors/{clerk_id}")
 def list_vectors(clerk_id: str):
     user_id = get_user_id(clerk_id)
@@ -141,6 +150,7 @@ def list_vectors(clerk_id: str):
         if v.get('created_at'):
             v['created_at'] = v['created_at'].isoformat()
     return {"vectors": vectors}
+
 
 @app.get("/jobs/{clerk_id}")
 def list_jobs(clerk_id: str):
@@ -157,6 +167,7 @@ def list_jobs(clerk_id: str):
                 j[field] = json.loads(j[field])
     return {"jobs": jobs}
 
+
 @app.post("/images/transform")
 def transform_image(req: TransformImageRequest):
     try:
@@ -164,10 +175,8 @@ def transform_image(req: TransformImageRequest):
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
         job_id = insert_job(user_id, "raster_transform", {
-            "image_id": req.image_id,
-            "new_epsg": req.new_epsg,
-            "new_resolution_x": req.new_resolution_x,
-            "new_resolution_y": req.new_resolution_y,
+            "image_id": req.image_id, "new_epsg": req.new_epsg,
+            "new_resolution_x": req.new_resolution_x, "new_resolution_y": req.new_resolution_y,
         })
         if req.new_epsg:
             res_m = req.new_resolution_x or req.new_resolution_y or None
@@ -176,6 +185,7 @@ def transform_image(req: TransformImageRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/vectors/transform")
 def transform_vector(req: TransformVectorRequest):
     try:
@@ -183,17 +193,16 @@ def transform_vector(req: TransformVectorRequest):
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
         job_id = insert_job(user_id, "vector_transform", {
-            "vector_id": req.vector_id,
-            "new_epsg": req.new_epsg,
+            "vector_id": req.vector_id, "new_epsg": req.new_epsg,
         })
         enqueue_vector_transform(str(job_id), req.vector_id, req.new_epsg)
         return {"job_id": str(job_id), "status": "queued"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.delete("/images/{image_id}")
 def delete_image(image_id: str, clerk_id: str):
-    """Delete a raster image — verifies ownership then calls cleanup worker."""
     user_id = get_user_id(clerk_id)
     if not user_id:
         raise HTTPException(status_code=404, detail="User not found")
@@ -201,18 +210,15 @@ def delete_image(image_id: str, clerk_id: str):
     if not any(str(i["id"]) == image_id for i in images):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(
-            f"{CLEANUP_WORKER_URL}/raster/{image_id}",
-            timeout=60,
-        )
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/raster/{image_id}", timeout=60)
         r.raise_for_status()
         return {"deleted": "image", "image_id": image_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.delete("/vectors/{vector_id}")
 def delete_vector(vector_id: str, clerk_id: str):
-    """Delete a vector — verifies ownership then calls cleanup worker."""
     user_id = get_user_id(clerk_id)
     if not user_id:
         raise HTTPException(status_code=404, detail="User not found")
@@ -220,53 +226,117 @@ def delete_vector(vector_id: str, clerk_id: str):
     if not any(str(v["id"]) == vector_id for v in vectors):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(
-            f"{CLEANUP_WORKER_URL}/vector/{vector_id}",
-            timeout=60,
-        )
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/vector/{vector_id}", timeout=60)
         r.raise_for_status()
         return {"deleted": "vector", "vector_id": vector_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/layers/{clerk_id}")
 def get_layers(clerk_id: str):
+    """
+    Returns all map-ready layers for a user.
+    Rasters: signed GCS URL for COG protocol in MapLibre.
+    Vectors: tile URL for MVT endpoint.
+    """
     user_id = get_user_id(clerk_id)
     if not user_id:
         return {"layers": []}
 
-    geoserver_url = os.getenv(
-        "GEOSERVER_URL",
-        "https://timbermap-geoserver-788407107542.us-central1.run.app/geoserver"
-    )
-    workspace = "timbermap"
-    images = get_images(user_id)
+    images  = get_images(user_id)
     vectors = get_vectors(user_id)
-    layers = []
+    layers  = []
+    client  = storage.Client()
+    bucket  = client.bucket(GCS_BUCKET)
 
     for img in images:
-        if img.get("status") == "ready" and img.get("geoserver_layer"):
-            layers.append({
-                "id": img["id"],
-                "name": img["filename"],
-                "type": "raster",
-                "layer": img["geoserver_layer"],
-                "wms_url": f"{geoserver_url}/{workspace}/wms",
-                "epsg": img.get("epsg"),
-            })
+        if img.get("status") == "ready":
+            try:
+                cog_path = f"users/cogs/{img['id']}.tif"
+                blob = bucket.blob(cog_path)
+                signed_url = blob.generate_signed_url(
+                    version="v4", expiration=timedelta(days=7), method="GET"
+                )
+                layers.append({
+                    "id":         img["id"],
+                    "name":       img["filename"],
+                    "type":       "raster",
+                    "cog_url":    signed_url,
+                    "epsg":       img.get("epsg"),
+                })
+            except Exception:
+                pass
 
+    api_url = os.getenv("API_PUBLIC_URL", "https://timbermap-api-788407107542.us-central1.run.app")
     for vec in vectors:
-        if vec.get("status") == "ready" and vec.get("geoserver_layer"):
+        if vec.get("status") == "ready":
             layers.append({
-                "id": vec["id"],
-                "name": vec["filename"],
-                "type": "vector",
-                "layer": vec["geoserver_layer"],
-                "wms_url": f"{geoserver_url}/{workspace}/wms",
-                "epsg": vec.get("epsg"),
+                "id":       vec["id"],
+                "name":     vec["filename"],
+                "type":     "vector",
+                "tiles_url": f"{api_url}/vectors/{vec['id']}/tiles/{{z}}/{{x}}/{{y}}?clerk_id={clerk_id}",
+                "epsg":     vec.get("epsg"),
             })
 
     return {"layers": layers}
+
+
+@app.get("/vectors/{vector_id}/tiles/{z}/{x}/{y}")
+def vector_tiles(vector_id: str, z: int, x: int, y: int, clerk_id: str):
+    """
+    Serve MVT (Mapbox Vector Tiles) from PostGIS for a given vector layer.
+    Uses ST_AsMVT for efficient tile generation.
+    """
+    # Verify ownership
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    vectors = get_vectors(user_id)
+    vec = next((v for v in vectors if str(v["id"]) == vector_id), None)
+    if not vec:
+        raise HTTPException(status_code=403, detail="Not authorized or not found")
+
+    table = f"vec_{vector_id.replace('-', '_')}"
+
+    try:
+        conn = get_db_conn()
+        cur  = conn.cursor()
+        cur.execute(f"""
+            SELECT ST_AsMVT(tile, 'layer', 4096, 'geom') AS mvt
+            FROM (
+                SELECT
+                    ST_AsMVTGeom(
+                        ST_Transform(geometry, 3857),
+                        ST_TileEnvelope(%s, %s, %s),
+                        4096, 64, true
+                    ) AS geom,
+                    *
+                FROM "vectors"."{table}"
+                WHERE geometry IS NOT NULL
+                  AND ST_Intersects(
+                      ST_Transform(geometry, 3857),
+                      ST_TileEnvelope(%s, %s, %s)
+                  )
+            ) tile
+            WHERE geom IS NOT NULL
+        """, (z, x, y, z, x, y))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        mvt_data = bytes(row["mvt"]) if row and row["mvt"] else b""
+        return Response(
+            content=mvt_data,
+            media_type="application/x-protobuf",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/images/{image_id}/download")
 def download_image(image_id: str, clerk_id: str):
@@ -279,12 +349,13 @@ def download_image(image_id: str, clerk_id: str):
         raise HTTPException(status_code=404, detail="Image not found")
     try:
         client = storage.Client()
-        bucket = client.bucket(os.getenv("GCS_BUCKET"))
+        bucket = client.bucket(GCS_BUCKET)
         blob = bucket.blob(img["gcs_path"])
         url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/vectors/{vector_id}/download")
 def download_vector(vector_id: str, clerk_id: str):
@@ -297,7 +368,7 @@ def download_vector(vector_id: str, clerk_id: str):
         raise HTTPException(status_code=404, detail="Vector not found")
     try:
         client = storage.Client()
-        bucket = client.bucket(os.getenv("GCS_BUCKET"))
+        bucket = client.bucket(GCS_BUCKET)
         blob = bucket.blob(vec["gcs_path"])
         url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
         return {"url": url}
