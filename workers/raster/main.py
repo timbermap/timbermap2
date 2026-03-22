@@ -179,23 +179,46 @@ def convert_to_cog(input_path: str, output_path: str):
     """
     Reproject to EPSG:3857 + GoogleMapsCompatible tiling scheme.
     Required by @geomatico/maplibre-cog-protocol which does not reproject.
+    For 4-band images, drops alpha band to avoid black border issue.
     """
+    import rasterio
     from osgeo import gdal
     gdal.UseExceptions()
 
-    warp_opts = gdal.WarpOptions(
-        dstSRS="EPSG:3857",
-        resampleAlg=gdal.GRA_Bilinear,
-        format="COG",
-        creationOptions=[
-            "BLOCKSIZE=256",
-            "TILING_SCHEME=GoogleMapsCompatible",
-            "COMPRESS=JPEG",
-            "OVERVIEWS=IGNORE_EXISTING",
-            "ADD_ALPHA=NO",
-        ],
-        dstNodata=float("nan"),
-    )
+    # Check band count — if 4 bands, strip alpha to avoid black borders
+    with rasterio.open(input_path) as src:
+        num_bands = src.count
+
+    if num_bands == 4:
+        # Use bands 1,2,3 only — drop the alpha band
+        warp_opts = gdal.WarpOptions(
+            dstSRS="EPSG:3857",
+            resampleAlg=gdal.GRA_Bilinear,
+            format="COG",
+            creationOptions=[
+                "BLOCKSIZE=256",
+                "TILING_SCHEME=GoogleMapsCompatible",
+                "COMPRESS=JPEG",
+                "OVERVIEWS=IGNORE_EXISTING",
+                "ADD_ALPHA=NO",
+            ],
+            bandList=[1, 2, 3],
+        )
+    else:
+        warp_opts = gdal.WarpOptions(
+            dstSRS="EPSG:3857",
+            resampleAlg=gdal.GRA_Bilinear,
+            format="COG",
+            creationOptions=[
+                "BLOCKSIZE=256",
+                "TILING_SCHEME=GoogleMapsCompatible",
+                "COMPRESS=JPEG",
+                "OVERVIEWS=IGNORE_EXISTING",
+                "ADD_ALPHA=NO",
+            ],
+            dstNodata=float("nan"),
+        )
+
     result = gdal.Warp(output_path, input_path, options=warp_opts)
     if result is None:
         raise RuntimeError(f"gdal.Warp COG conversion failed for {input_path}")
