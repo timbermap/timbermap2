@@ -5,7 +5,7 @@ Shared GeoServer REST client — copy into each worker directory via Dockerfile:
 
 Env vars required:
     GEOSERVER_URL       e.g. https://timbermap-geoserver-tjrp7tcqaa-uc.a.run.app
-    GEOSERVER_PASSWORD  GeoServer admin password (from Secret Manager: geoserver-password)
+    GEOSERVER_PASSWORD  from Secret Manager geoserver-password
     DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD  — for PostGIS datastore wiring
 """
 
@@ -43,12 +43,12 @@ def _ok(r: requests.Response, *extra_codes: int) -> bool:
 
 def ensure_workspace() -> None:
     url = f"{_base()}/workspaces/{WORKSPACE}"
-    r = requests.get(url, auth=_auth(), headers=_json_headers(), timeout=30)
+    r = requests.get(url, auth=_auth(), headers=_json_headers(), timeout=120)
     if r.status_code == 404:
         r2 = requests.post(
             f"{_base()}/workspaces",
             json={"workspace": {"name": WORKSPACE}},
-            auth=_auth(), headers=_json_headers(), timeout=30,
+            auth=_auth(), headers=_json_headers(), timeout=120,
         )
         r2.raise_for_status()
         log.info("GeoServer workspace '%s' created.", WORKSPACE)
@@ -57,26 +57,15 @@ def ensure_workspace() -> None:
 # ── PostGIS datastore (shared, used by all vector layers) ─────────────────────
 
 def ensure_postgis_datastore() -> str:
-    """
-    Create the shared PostGIS datastore if it doesn't exist.
-    Returns the datastore name.
-
-    NOTE: GeoServer must reach the DB via TCP.  For Cloud SQL, set
-    DB_HOST_PUBLIC to the Cloud SQL instance's public/private IP.
-    The Cloud SQL Unix socket path (/cloudsql/…) only works inside Cloud Run,
-    not from GeoServer's JVM.  Add DB_HOST_PUBLIC to the GeoServer Cloud Run
-    service env vars.
-    """
     ensure_workspace()
     ds_url = f"{_base()}/workspaces/{WORKSPACE}/datastores/{POSTGIS_DATASTORE}"
-    r = requests.get(ds_url, auth=_auth(), headers=_json_headers(), timeout=30)
+    r = requests.get(ds_url, auth=_auth(), headers=_json_headers(), timeout=120)
     if _ok(r):
         return POSTGIS_DATASTORE
 
-    # Resolve host — prefer explicit public/private IP for GeoServer
     host = os.getenv("DB_HOST_PUBLIC") or os.getenv("DB_HOST", "127.0.0.1")
     if host.startswith("/"):
-        host = "127.0.0.1"  # Socket path — fall back, will likely fail
+        host = "127.0.0.1"
 
     payload = {
         "dataStore": {
@@ -101,7 +90,7 @@ def ensure_postgis_datastore() -> str:
     }
     r2 = requests.post(
         f"{_base()}/workspaces/{WORKSPACE}/datastores",
-        json=payload, auth=_auth(), headers=_json_headers(), timeout=30,
+        json=payload, auth=_auth(), headers=_json_headers(), timeout=120,
     )
     r2.raise_for_status()
     log.info("GeoServer PostGIS datastore '%s' created.", POSTGIS_DATASTORE)
@@ -114,49 +103,54 @@ def publish_raster_layer(image_id: str, cog_http_url: str) -> str:
     """
     Create a GeoTIFF CoverageStore + Coverage for a Cloud-Optimised GeoTIFF.
     Returns the fully-qualified layer name  'timbermap:raster_<image_id>'.
-
-    cog_http_url must be reachable by GeoServer.  Two options:
-      a) Generate a signed GCS URL (v4, max 7 days) — see generate_cog_signed_url().
-      b) Install the GCS Community Plugin in GeoServer and pass a gs:// path.
-
-    GeoServer 2.17+ reads COGs natively over HTTP via the built-in CogReader.
     """
     ensure_workspace()
     store_name = f"raster_{image_id.replace('-', '_')}"
     layer_name = store_name
 
+    # 1. Create or update the CoverageStore
     store_payload = {
         "coverageStore": {
-            "name":    store_name,
-            "type":    "GeoTIFF",
-            "enabled": True,
-            "url":     cog_http_url,
+            "name":      store_name,
+            "type":      "GeoTIFF",
+            "enabled":   True,
+            "url":       cog_http_url,
             "workspace": {"name": WORKSPACE},
         }
     }
-
     stores_url = f"{_base()}/workspaces/{WORKSPACE}/coveragestores"
     r = requests.post(stores_url, json=store_payload,
-                      auth=_auth(), headers=_json_headers(), timeout=30)
+                      auth=_auth(), headers=_json_headers(), timeout=120)
     if not _ok(r):
-        # Store may already exist — update the URL
         requests.put(f"{stores_url}/{store_name}", json=store_payload,
-                     auth=_auth(), headers=_json_headers(), timeout=30)
+                     auth=_auth(), headers=_json_headers(), timeout=120)
 
-    # Publish coverage (layer)
-    cov_payload = {
-        "coverage": {
-            "name":       layer_name,
-            "title":      layer_name,
-            "nativeName": layer_name,
-            "enabled":    True,
+    # 2. Auto-configure coverage from the store (GeoServer reads the file metadata)
+    #    This is more reliable than manually specifying nativeName for COGs over HTTP.
+    autoconfigure_url = f"{stores_url}/{store_name}/coverages"
+    r2 = requests.post(
+        autoconfigure_url,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        json={},   # empty body = let GeoServer auto-detect from the file
+        auth=_auth(),
+        timeout=120,
+    )
+
+    # If auto-configure fails (e.g. GeoServer can't read the COG), fall back to manual
+    if not _ok(r2, 409):
+        log.warning("Auto-configure failed (%s), trying manual coverage publish...", r2.status_code)
+        cov_payload = {
+            "coverage": {
+                "name":       layer_name,
+                "title":      layer_name,
+                "nativeName": layer_name,
+                "enabled":    True,
+            }
         }
-    }
-    cov_url = f"{stores_url}/{store_name}/coverages"
-    r2 = requests.post(cov_url, json=cov_payload,
-                       auth=_auth(), headers=_json_headers(), timeout=60)
-    if not _ok(r2, 409):          # 409 = already exists, that's fine
-        r2.raise_for_status()
+        r3 = requests.post(autoconfigure_url, json=cov_payload,
+                           auth=_auth(), headers=_json_headers(), timeout=120)
+        if not _ok(r3, 409):
+            r3.raise_for_status()
 
     layer = f"{WORKSPACE}:{layer_name}"
     log.info("GeoServer raster layer published: %s", layer)
@@ -176,7 +170,7 @@ def update_raster_layer_url(image_id: str, cog_http_url: str) -> None:
     }
     r = requests.put(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}",
-        json=payload, auth=_auth(), headers=_json_headers(), timeout=30,
+        json=payload, auth=_auth(), headers=_json_headers(), timeout=120,
     )
     if not _ok(r, 404):
         r.raise_for_status()
@@ -186,16 +180,14 @@ def delete_raster_layer(image_id: str) -> None:
     """Delete Coverage + CoverageStore. Non-fatal if they don't exist."""
     store_name = f"raster_{image_id.replace('-', '_')}"
     layer_name = store_name
-    # Delete coverage first
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}"
         f"/coverages/{layer_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
-    # Delete store
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/coveragestores/{store_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
     log.info("GeoServer raster layer deleted: %s", store_name)
 
@@ -203,12 +195,8 @@ def delete_raster_layer(image_id: str) -> None:
 # ── Vector layers ─────────────────────────────────────────────────────────────
 
 def publish_vector_layer(vector_id: str, table_name: str, epsg: str = "4326") -> str:
-    """
-    Publish a PostGIS table as a WMS/WFS FeatureType.
-    Returns the fully-qualified layer name  'timbermap:vec_<vector_id>'.
-    """
     ds_name = ensure_postgis_datastore()
-    layer_name = table_name  # e.g.  vec_<uuid_underscored>
+    layer_name = table_name
 
     srs = f"EPSG:{epsg}" if not str(epsg).startswith("EPSG") else epsg
 
@@ -233,7 +221,7 @@ def publish_vector_layer(vector_id: str, table_name: str, epsg: str = "4326") ->
     }
     ft_url = f"{_base()}/workspaces/{WORKSPACE}/datastores/{ds_name}/featuretypes"
     r = requests.post(ft_url, json=payload,
-                      auth=_auth(), headers=_json_headers(), timeout=30)
+                      auth=_auth(), headers=_json_headers(), timeout=120)
     if not _ok(r, 409):
         r.raise_for_status()
 
@@ -248,7 +236,7 @@ def delete_vector_layer(vector_id: str) -> None:
     requests.delete(
         f"{_base()}/workspaces/{WORKSPACE}/datastores/{POSTGIS_DATASTORE}"
         f"/featuretypes/{table_name}?recurse=true",
-        auth=_auth(), timeout=30,
+        auth=_auth(), timeout=120,
     )
     log.info("GeoServer vector layer deleted: %s", table_name)
 
@@ -257,12 +245,6 @@ def delete_vector_layer(vector_id: str) -> None:
 
 def generate_cog_signed_url(gcs_path: str, bucket_name: str,
                              expiry_seconds: int = 604800) -> str:
-    """
-    Generate a v4 signed URL for a GCS object (max 7 days = 604 800 s).
-    Works in Cloud Run when the service account has:
-        roles/storage.objectViewer  (on the bucket)
-        roles/iam.serviceAccountTokenCreator  (on itself, for self-signing)
-    """
     import google.auth
     import google.auth.transport.requests
     from google.cloud import storage as gcs
