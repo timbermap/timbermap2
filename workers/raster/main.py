@@ -209,11 +209,12 @@ def convert_to_cog(input_path: str, output_path: str):
         creationOptions=[
             "BLOCKSIZE=256",
             "TILING_SCHEME=GoogleMapsCompatible",
-            "COMPRESS=JPEG",
+            "COMPRESS=DEFLATE",
             "OVERVIEWS=IGNORE_EXISTING",
-            "ADD_ALPHA=NO",
         ],
-        dstNodata=float("nan"),
+        srcNodata=0,
+        dstNodata=0,
+        dstAlpha=True,
     )
 
     result = gdal.Warp(output_path, input_path, options=warp_opts)
