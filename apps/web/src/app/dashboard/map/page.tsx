@@ -9,7 +9,6 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw'
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css'
 
 // COG protocol for reading Cloud-Optimized GeoTIFFs directly
-// @ts-expect-error - no types
 import { cogProtocol } from '@geomatico/maplibre-cog-protocol'
 
 type Layer = {
