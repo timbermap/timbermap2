@@ -99,14 +99,30 @@ def ensure_postgis_datastore() -> str:
 
 # ── Raster layers ─────────────────────────────────────────────────────────────
 
-def publish_raster_layer(image_id: str, cog_http_url: str) -> str:
+def publish_raster_layer(
+    image_id: str,
+    cog_http_url: str,
+    epsg: str = "4326",
+    bbox: dict | None = None,
+) -> str:
     """
     Create a GeoTIFF CoverageStore + Coverage for a Cloud-Optimised GeoTIFF.
+    Passes CRS and bbox explicitly so GeoServer does not need to read the file.
     Returns the fully-qualified layer name  'timbermap:raster_<image_id>'.
+
+    bbox dict: {minx, miny, maxx, maxy} in native CRS units.
+    If bbox is None, uses world extent as fallback.
     """
     ensure_workspace()
     store_name = f"raster_{image_id.replace('-', '_')}"
     layer_name = store_name
+    srs = f"EPSG:{epsg}" if not str(epsg).startswith("EPSG") else epsg
+
+    # Use provided bbox or fall back to world extent
+    if bbox:
+        minx, miny, maxx, maxy = bbox["minx"], bbox["miny"], bbox["maxx"], bbox["maxy"]
+    else:
+        minx, miny, maxx, maxy = -180, -90, 180, 90
 
     # 1. Create or update the CoverageStore
     store_payload = {
@@ -125,32 +141,32 @@ def publish_raster_layer(image_id: str, cog_http_url: str) -> str:
         requests.put(f"{stores_url}/{store_name}", json=store_payload,
                      auth=_auth(), headers=_json_headers(), timeout=120)
 
-    # 2. Auto-configure coverage from the store (GeoServer reads the file metadata)
-    #    This is more reliable than manually specifying nativeName for COGs over HTTP.
-    autoconfigure_url = f"{stores_url}/{store_name}/coverages"
-    r2 = requests.post(
-        autoconfigure_url,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        json={},   # empty body = let GeoServer auto-detect from the file
-        auth=_auth(),
-        timeout=120,
-    )
-
-    # If auto-configure fails (e.g. GeoServer can't read the COG), fall back to manual
-    if not _ok(r2, 409):
-        log.warning("Auto-configure failed (%s), trying manual coverage publish...", r2.status_code)
-        cov_payload = {
-            "coverage": {
-                "name":       layer_name,
-                "title":      layer_name,
-                "nativeName": layer_name,
-                "enabled":    True,
-            }
+    # 2. Publish coverage with explicit CRS + bbox so GeoServer doesn't read the file
+    cov_payload = {
+        "coverage": {
+            "name":       layer_name,
+            "title":      layer_name,
+            "nativeName": layer_name,
+            "enabled":    True,
+            "srs":        srs,
+            "nativeCRS":  srs,
+            "nativeBoundingBox": {
+                "minx": minx, "maxx": maxx,
+                "miny": miny, "maxy": maxy,
+                "crs":  srs,
+            },
+            "latLonBoundingBox": {
+                "minx": -180, "maxx": 180,
+                "miny": -90,  "maxy": 90,
+                "crs":  "EPSG:4326",
+            },
         }
-        r3 = requests.post(autoconfigure_url, json=cov_payload,
-                           auth=_auth(), headers=_json_headers(), timeout=120)
-        if not _ok(r3, 409):
-            r3.raise_for_status()
+    }
+    cov_url = f"{stores_url}/{store_name}/coverages"
+    r2 = requests.post(cov_url, json=cov_payload,
+                       auth=_auth(), headers=_json_headers(), timeout=120)
+    if not _ok(r2, 409):
+        r2.raise_for_status()
 
     layer = f"{WORKSPACE}:{layer_name}"
     log.info("GeoServer raster layer published: %s", layer)
@@ -241,12 +257,30 @@ def delete_vector_layer(vector_id: str) -> None:
     log.info("GeoServer vector layer deleted: %s", table_name)
 
 
-# ── GCS URL helper ───────────────────────────────────────────────────────────
+# ── GCS signed URL helper ─────────────────────────────────────────────────────
 
 def generate_cog_signed_url(gcs_path: str, bucket_name: str,
                              expiry_seconds: int = 604800) -> str:
     """
-    Returns a gs:// URI for use with GeoServer + GCS Community Plugin.
-    GeoServer reads the COG directly from GCS using the service account credentials.
+    Generate a v4 signed URL for a GCS object (max 7 days = 604 800 s).
     """
-    return f"gs://{bucket_name}/{gcs_path}"
+    import google.auth
+    import google.auth.transport.requests
+    from google.cloud import storage as gcs
+
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(google.auth.transport.requests.Request())
+
+    client = gcs.Client(credentials=credentials)
+    blob = client.bucket(bucket_name).blob(gcs_path)
+
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=expiry_seconds,
+        method="GET",
+        service_account_email=getattr(credentials, "service_account_email", None),
+        access_token=credentials.token,
+    )
+    return url

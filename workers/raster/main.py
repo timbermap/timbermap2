@@ -117,6 +117,7 @@ def get_cog_signed_url(image_id: str) -> str:
 
 def extract_metadata(tif_path: str) -> dict:
     import rasterio
+    from rasterio.warp import transform_bounds
     with rasterio.open(tif_path) as src:
         epsg = src.crs.to_epsg() if src.crs else None
         num_bands = src.count
@@ -128,12 +129,21 @@ def extract_metadata(tif_path: str) -> dict:
             area_ha = round(111320 * 111320 * pixel_x * pixel_y * width * height / 10000, 2)
         else:
             area_ha = round(pixel_x * pixel_y * width * height / 10000, 2)
+        # Native bbox in file CRS
+        bounds = src.bounds
+        bbox = {
+            "minx": bounds.left,
+            "miny": bounds.bottom,
+            "maxx": bounds.right,
+            "maxy": bounds.top,
+        }
         return {
             "epsg":         str(epsg) if epsg else None,
             "num_bands":    num_bands,
             "pixel_size_x": pixel_x,
             "pixel_size_y": pixel_y,
             "area_ha":      area_ha,
+            "bbox":         bbox,
         }
 
 
@@ -244,7 +254,11 @@ async def ingest_raster(job: IngestJob):
             try:
                 update_job(job.job_id, "running", "Publishing to GeoServer...")
                 signed_url = get_cog_signed_url(job.image_id)
-                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+                geoserver_layer = publish_raster_layer(
+                    job.image_id, signed_url,
+                    epsg=meta["epsg"] or "4326",
+                    bbox=meta.get("bbox"),
+                )
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
@@ -300,7 +314,11 @@ async def transform_raster(job: TransformJob):
                 update_job(job.job_id, "running", "Updating GeoServer layer...")
                 delete_raster_layer(job.image_id)   # ← always delete first
                 signed_url = get_cog_signed_url(job.image_id)
-                geoserver_layer = publish_raster_layer(job.image_id, signed_url)
+                geoserver_layer = publish_raster_layer(
+                    job.image_id, signed_url,
+                    epsg=meta["epsg"] or "4326",
+                    bbox=meta.get("bbox"),
+                )
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
