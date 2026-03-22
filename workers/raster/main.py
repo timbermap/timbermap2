@@ -293,6 +293,9 @@ async def transform_raster(job: TransformJob):
             update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
             warp_raster(src_path, warped_path, job.target_epsg, job.target_resolution_m)
 
+            # Extract metadata from warped file (correct EPSG) before COG conversion
+            meta_warped = extract_metadata(warped_path)
+
             update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
             convert_to_cog(warped_path, cog_path)
             upload_to_gcs(cog_path, f"users/cogs/{job.image_id}.tif")
@@ -302,7 +305,7 @@ async def transform_raster(job: TransformJob):
             update_image(
                 job.image_id,
                 status="ready",
-                epsg=meta["epsg"],
+                epsg=meta_warped["epsg"],  # use original target EPSG, not 3857
                 num_bands=meta["num_bands"],
                 pixel_size_x=meta["pixel_size_x"],
                 pixel_size_y=meta["pixel_size_y"],
