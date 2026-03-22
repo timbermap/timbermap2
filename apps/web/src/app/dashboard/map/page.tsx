@@ -19,7 +19,7 @@ type Layer = {
   tiles_url?: string     // for vectors (MVT)
   epsg: string | null
   visible: boolean
-  bbox?: { minx: number; miny: number; maxx: number; maxy: number } | null
+  bbox?: [number, number, number, number] | null  // [minx, miny, maxx, maxy]
 }
 
 type AOIFeature = {
@@ -222,10 +222,10 @@ export default function MapPage() {
 
       if (layer.type === 'raster' && layer.cog_url) {
         if (!map.current!.getSource(sourceId)) {
-          // Use COG protocol — reads GeoTIFF directly with range requests
+          // COG protocol — use tiles array with cog:// prefix
           map.current!.addSource(sourceId, {
             type: 'raster',
-            url: `cog://${layer.cog_url}`,
+            tiles: [`cog://${layer.cog_url}`],
             tileSize: 256,
           })
           map.current!.addLayer({
@@ -272,7 +272,8 @@ export default function MapPage() {
 
   function zoomToLayer(layer: Layer) {
     if (!map.current || !layer.bbox) return
-    const { minx, miny, maxx, maxy } = layer.bbox
+    // bbox is [minx, miny, maxx, maxy]
+    const [minx, miny, maxx, maxy] = layer.bbox
     map.current.fitBounds(
       [[minx, miny], [maxx, maxy]],
       { padding: 40, duration: 800 }

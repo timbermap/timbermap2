@@ -24,12 +24,8 @@ app = FastAPI(title="Timbermap API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://timbermap.com",
-        "https://timbermap-web-788407107542.us-central1.run.app"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -258,24 +254,15 @@ def get_layers(clerk_id: str):
                 signed_url = blob.generate_signed_url(
                     version="v4", expiration=timedelta(days=7), method="GET"
                 )
-                # Read bbox from COG metadata
+                # Use bbox stored in DB — fast and reliable
                 bbox = None
-                try:
-                    import rasterio
-                    from rasterio.warp import transform_bounds
-                    with rasterio.open(signed_url) as src:
-                        bounds = src.bounds
-                        # Transform to EPSG:4326 for consistent bbox
-                        if src.crs and src.crs.to_epsg() != 4326:
-                            left, bottom, right, top = transform_bounds(
-                                src.crs, "EPSG:4326",
-                                bounds.left, bounds.bottom, bounds.right, bounds.top
-                            )
-                        else:
-                            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
-                        bbox = [left, bottom, right, top]
-                except Exception:
-                    pass
+                if img.get("bbox_minx") is not None:
+                    bbox = [
+                        float(img["bbox_minx"]),
+                        float(img["bbox_miny"]),
+                        float(img["bbox_maxx"]),
+                        float(img["bbox_maxy"]),
+                    ]
                 layers.append({
                     "id":      img["id"],
                     "name":    img["filename"],
@@ -290,7 +277,6 @@ def get_layers(clerk_id: str):
     api_url = os.getenv("API_PUBLIC_URL", "https://timbermap-api-788407107542.us-central1.run.app")
     for vec in vectors:
         if vec.get("status") == "ready":
-            # Read bbox from PostGIS
             bbox = None
             try:
                 table = f"vec_{str(vec['id']).replace('-', '_')}"
@@ -304,7 +290,6 @@ def get_layers(clerk_id: str):
                 row = cur.fetchone()
                 cur.close(); conn.close()
                 if row and row["ext"]:
-                    # Parse BOX(minx miny, maxx maxy)
                     ext = str(row["ext"])
                     import re
                     nums = re.findall(r"[-0-9.]+", ext)
@@ -324,13 +309,22 @@ def get_layers(clerk_id: str):
     return {"layers": layers}
 
 
+@app.options("/vectors/{vector_id}/tiles/{z}/{x}/{y}")
+def vector_tiles_options(vector_id: str, z: int, x: int, y: int):
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
 @app.get("/vectors/{vector_id}/tiles/{z}/{x}/{y}")
 def vector_tiles(vector_id: str, z: int, x: int, y: int, clerk_id: str):
     """
     Serve MVT (Mapbox Vector Tiles) from PostGIS for a given vector layer.
-    Uses ST_AsMVT for efficient tile generation.
     """
-    # Verify ownership
     user_id = get_user_id(clerk_id)
     if not user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
