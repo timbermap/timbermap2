@@ -1,5 +1,6 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
+import React from 'react'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl, { StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -71,19 +72,25 @@ function calcAreaKm2(coords: number[][]): number {
 
 // ── Layer popover ────────────────────────────────────────────────────────────
 function LayerPopover({
-  layer, onClose, onZoomTo, onOpacityChange
+  layer, onClose, onZoomTo, onOpacityChange, anchorRef
 }: {
   layer: Layer
   onClose: () => void
   onZoomTo: (l: Layer) => void
   onOpacityChange: (id: string, opacity: number) => void
+  anchorRef: React.RefObject<HTMLButtonElement>
 }) {
+  const rect = anchorRef.current?.getBoundingClientRect()
+  const top  = rect ? rect.top : 0
+  const left = rect ? rect.right + 8 : 0
+
   return (
     <>
       {/* Backdrop to close */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="absolute left-full top-0 ml-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-52"
+        className="fixed z-50 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-52"
+        style={{ top, left }}
         onClick={e => e.stopPropagation()}
       >
         <p className="text-xs font-semibold text-gray-700 truncate mb-3">{layer.name}</p>
@@ -137,6 +144,7 @@ function LayerAccordion({
 }) {
   const [open, setOpen] = useState(true)
   const [activePopover, setActivePopover] = useState<string | null>(null)
+  const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   if (layers.length === 0) return null
 
@@ -192,6 +200,7 @@ function LayerAccordion({
 
                 {/* Options button */}
                 <button
+                  ref={el => { btnRefs.current[layer.id] = el }}
                   onClick={e => {
                     e.stopPropagation()
                     setActivePopover(activePopover === layer.id ? null : layer.id)
@@ -212,6 +221,7 @@ function LayerAccordion({
                   onClose={() => setActivePopover(null)}
                   onZoomTo={onZoomTo}
                   onOpacityChange={onOpacityChange}
+                  anchorRef={{ current: btnRefs.current[layer.id] ?? null }}
                 />
               )}
             </div>
