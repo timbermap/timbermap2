@@ -78,7 +78,7 @@ function LayerPopover({
   onClose: () => void
   onZoomTo: (l: Layer) => void
   onOpacityChange: (id: string, opacity: number) => void
-  anchorRef: React.RefObject<HTMLButtonElement>
+  anchorRef: React.RefObject<HTMLButtonElement | null>
 }) {
   const rect = anchorRef.current?.getBoundingClientRect()
   const top  = rect ? rect.top : 0
