@@ -212,9 +212,8 @@ def convert_to_cog(input_path: str, output_path: str):
             "COMPRESS=DEFLATE",
             "OVERVIEWS=IGNORE_EXISTING",
         ],
-        srcNodata=0,
-        dstNodata=0,
         dstAlpha=True,
+        warpOptions=["INIT_DEST=255,255,255,0"],
     )
 
     result = gdal.Warp(output_path, input_path, options=warp_opts)
