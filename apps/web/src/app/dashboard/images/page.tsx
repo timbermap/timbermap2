@@ -174,11 +174,7 @@ export default function ImagesPage() {
     }
   }
 
-  function formatGSD(pixelSize: number | null) {
-    if (!pixelSize) return '—'
-    if (pixelSize < 1) return `${(pixelSize * 100).toFixed(0)} cm`
-    return `${pixelSize.toFixed(2)} m`
-  }
+
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
