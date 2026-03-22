@@ -38,6 +38,7 @@ export default function VectorsPage() {
   const [showTransform, setShowTransform] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [transforming, setTransforming] = useState(false)
   const [newEpsg, setNewEpsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -144,12 +145,15 @@ export default function VectorsPage() {
 
   async function handleDelete() {
     if (!user || !deletingId) return
+    setIsDeleting(true)
     try {
       await fetch(`${API}/vectors/${deletingId}?clerk_id=${user.id}`, { method: 'DELETE' })
       setShowDeleteConfirm(false); setDeletingId(null)
       await fetchData()
     } catch (err) {
       console.error('Delete failed', err)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -261,9 +265,9 @@ export default function VectorsPage() {
             <p className="text-sm font-medium text-gray-700 mb-4">{deletingFilename}</p>
             <p className="text-xs text-gray-400 mb-6">The file will be removed from GCS, GeoServer, PostGIS, and the database. This cannot be undone.</p>
             <div className="flex gap-3">
-              <button onClick={handleDelete}
-                className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors">
-                Delete permanently
+              <button onClick={handleDelete} disabled={isDeleting}
+                className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
+                {isDeleting ? 'Deleting...' : 'Delete permanently'}
               </button>
               <button onClick={() => { setShowDeleteConfirm(false); setDeletingId(null) }}
                 className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg text-sm hover:bg-gray-50 transition-colors">
@@ -322,8 +326,12 @@ export default function VectorsPage() {
                       )}
                     </td>
                     <td className="px-5 py-3.5">
-                      {isActive ? (
-                        <span className="text-xs text-gray-300">Busy...</span>
+                      {isActive || (isDeleting && deletingId === v.id) ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                          {isDeleting && deletingId === v.id ? (
+                            <><svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Deleting...</>
+                          ) : 'Busy...'}
+                        </span>
                       ) : (
                         <div className="flex items-center gap-3">
                           <button onClick={() => { setSelectedId(v.id); setShowTransform(true) }}
