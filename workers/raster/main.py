@@ -262,6 +262,7 @@ async def ingest_raster(job: IngestJob):
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
+            bbox = meta.get("bbox", {})
             update_image(
                 job.image_id,
                 status="ready",
@@ -271,6 +272,10 @@ async def ingest_raster(job: IngestJob):
                 pixel_size_y=meta["pixel_size_y"],
                 area_ha=meta["area_ha"],
                 geoserver_layer=geoserver_layer,
+                bbox_minx=bbox.get("minx"),
+                bbox_miny=bbox.get("miny"),
+                bbox_maxx=bbox.get("maxx"),
+                bbox_maxy=bbox.get("maxy"),
             )
 
             update_job(job.job_id, "done", "Ingest complete")
@@ -322,6 +327,7 @@ async def transform_raster(job: TransformJob):
             except Exception as geo_err:
                 print(f"GeoServer publish skipped: {geo_err}")
 
+            bbox = meta.get("bbox", {})
             update_image(
                 job.image_id,
                 status="ready",
@@ -331,6 +337,10 @@ async def transform_raster(job: TransformJob):
                 pixel_size_y=meta["pixel_size_y"],
                 area_ha=meta["area_ha"],
                 geoserver_layer=geoserver_layer,
+                bbox_minx=bbox.get("minx"),
+                bbox_miny=bbox.get("miny"),
+                bbox_maxx=bbox.get("maxx"),
+                bbox_maxy=bbox.get("maxy"),
             )
 
             msg = (

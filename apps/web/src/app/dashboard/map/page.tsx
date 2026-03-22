@@ -19,6 +19,7 @@ type Layer = {
   tiles_url?: string     // for vectors (MVT)
   epsg: string | null
   visible: boolean
+  bbox?: { minx: number; miny: number; maxx: number; maxy: number } | null
 }
 
 type AOIFeature = {
@@ -67,12 +68,13 @@ function calcAreaKm2(coords: number[][]): number {
 }
 
 function LayerSection({
-  title, icon, layers, onToggleLayer
+  title, icon, layers, onToggleLayer, onZoomTo
 }: {
   title: string
   icon: string
   layers: Layer[]
   onToggleLayer: (id: string) => void
+  onZoomTo: (layer: Layer) => void
 }) {
   if (layers.length === 0) return null
   return (
@@ -87,7 +89,7 @@ function LayerSection({
       <div className="space-y-0.5">
         {layers.map(layer => (
           <div key={layer.id}
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+            className="group flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"
             onClick={() => onToggleLayer(layer.id)}>
             <div className={`w-3.5 h-3.5 rounded border-2 flex-shrink-0 transition-colors ${
               layer.visible ? 'bg-[#2C5F45] border-[#2C5F45]' : 'border-gray-300 bg-white'
@@ -96,6 +98,17 @@ function LayerSection({
               <p className="text-xs font-medium text-gray-700 truncate">{layer.name}</p>
               <p className="text-xs text-gray-400">{layer.epsg || '—'}</p>
             </div>
+            {layer.bbox && (
+              <button
+                onClick={e => { e.stopPropagation(); onZoomTo(layer) }}
+                title="Zoom to layer"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#2C5F45]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+                </svg>
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -257,6 +270,15 @@ export default function MapPage() {
     })
   }, [layers, mapReady])
 
+  function zoomToLayer(layer: Layer) {
+    if (!map.current || !layer.bbox) return
+    const { minx, miny, maxx, maxy } = layer.bbox
+    map.current.fitBounds(
+      [[minx, miny], [maxx, maxy]],
+      { padding: 40, duration: 800 }
+    )
+  }
+
   function toggleLayer(id: string) {
     setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l))
   }
@@ -320,8 +342,8 @@ export default function MapPage() {
             </p>
           ) : (
             <>
-              <LayerSection title="Images" icon="🛰️" layers={imageLayers} onToggleLayer={toggleLayer} />
-              <LayerSection title="Vectors" icon="📐" layers={vectorLayers} onToggleLayer={toggleLayer} />
+              <LayerSection title="Images" icon="🛰️" layers={imageLayers} onToggleLayer={toggleLayer} onZoomTo={zoomToLayer} />
+              <LayerSection title="Vectors" icon="📐" layers={vectorLayers} onToggleLayer={toggleLayer} onZoomTo={zoomToLayer} />
             </>
           )}
         </div>

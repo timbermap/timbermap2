@@ -258,12 +258,31 @@ def get_layers(clerk_id: str):
                 signed_url = blob.generate_signed_url(
                     version="v4", expiration=timedelta(days=7), method="GET"
                 )
+                # Read bbox from COG metadata
+                bbox = None
+                try:
+                    import rasterio
+                    from rasterio.warp import transform_bounds
+                    with rasterio.open(signed_url) as src:
+                        bounds = src.bounds
+                        # Transform to EPSG:4326 for consistent bbox
+                        if src.crs and src.crs.to_epsg() != 4326:
+                            left, bottom, right, top = transform_bounds(
+                                src.crs, "EPSG:4326",
+                                bounds.left, bounds.bottom, bounds.right, bounds.top
+                            )
+                        else:
+                            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
+                        bbox = [left, bottom, right, top]
+                except Exception:
+                    pass
                 layers.append({
-                    "id":         img["id"],
-                    "name":       img["filename"],
-                    "type":       "raster",
-                    "cog_url":    signed_url,
-                    "epsg":       img.get("epsg"),
+                    "id":      img["id"],
+                    "name":    img["filename"],
+                    "type":    "raster",
+                    "cog_url": signed_url,
+                    "epsg":    img.get("epsg"),
+                    "bbox":    bbox,
                 })
             except Exception:
                 pass
@@ -271,12 +290,35 @@ def get_layers(clerk_id: str):
     api_url = os.getenv("API_PUBLIC_URL", "https://timbermap-api-788407107542.us-central1.run.app")
     for vec in vectors:
         if vec.get("status") == "ready":
+            # Read bbox from PostGIS
+            bbox = None
+            try:
+                table = f"vec_{str(vec['id']).replace('-', '_')}"
+                conn = get_db_conn()
+                cur = conn.cursor()
+                cur.execute(f"""
+                    SELECT ST_Extent(ST_Transform(geometry, 4326)) as ext
+                    FROM "vectors"."{table}"
+                    WHERE geometry IS NOT NULL
+                """)
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                if row and row["ext"]:
+                    # Parse BOX(minx miny, maxx maxy)
+                    ext = str(row["ext"])
+                    import re
+                    nums = re.findall(r"[-0-9.]+", ext)
+                    if len(nums) == 4:
+                        bbox = [float(nums[0]), float(nums[1]), float(nums[2]), float(nums[3])]
+            except Exception:
+                pass
             layers.append({
-                "id":       vec["id"],
-                "name":     vec["filename"],
-                "type":     "vector",
+                "id":        vec["id"],
+                "name":      vec["filename"],
+                "type":      "vector",
                 "tiles_url": f"{api_url}/vectors/{vec['id']}/tiles/{{z}}/{{x}}/{{y}}?clerk_id={clerk_id}",
-                "epsg":     vec.get("epsg"),
+                "epsg":      vec.get("epsg"),
+                "bbox":      bbox,
             })
 
     return {"layers": layers}
