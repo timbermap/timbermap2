@@ -190,34 +190,31 @@ def convert_to_cog(input_path: str, output_path: str):
         num_bands = src.count
 
     if num_bands == 4:
-        # Use bands 1,2,3 only — drop the alpha band
-        warp_opts = gdal.WarpOptions(
-            dstSRS="EPSG:3857",
-            resampleAlg=gdal.GRA_Bilinear,
-            format="COG",
-            creationOptions=[
-                "BLOCKSIZE=256",
-                "TILING_SCHEME=GoogleMapsCompatible",
-                "COMPRESS=JPEG",
-                "OVERVIEWS=IGNORE_EXISTING",
-                "ADD_ALPHA=NO",
-            ],
-            bandList=[1, 2, 3],
-        )
-    else:
-        warp_opts = gdal.WarpOptions(
-            dstSRS="EPSG:3857",
-            resampleAlg=gdal.GRA_Bilinear,
-            format="COG",
-            creationOptions=[
-                "BLOCKSIZE=256",
-                "TILING_SCHEME=GoogleMapsCompatible",
-                "COMPRESS=JPEG",
-                "OVERVIEWS=IGNORE_EXISTING",
-                "ADD_ALPHA=NO",
-            ],
-            dstNodata=float("nan"),
-        )
+        # Strip alpha band first using rasterio, then warp
+        import rasterio
+        from rasterio.shutil import copy as rio_copy
+        stripped_path = input_path + "_rgb.tif"
+        with rasterio.open(input_path) as src:
+            data = src.read([1, 2, 3])
+            profile = src.profile.copy()
+            profile.update(count=3)
+            with rasterio.open(stripped_path, "w", **profile) as dst:
+                dst.write(data)
+        input_path = stripped_path
+
+    warp_opts = gdal.WarpOptions(
+        dstSRS="EPSG:3857",
+        resampleAlg=gdal.GRA_Bilinear,
+        format="COG",
+        creationOptions=[
+            "BLOCKSIZE=256",
+            "TILING_SCHEME=GoogleMapsCompatible",
+            "COMPRESS=JPEG",
+            "OVERVIEWS=IGNORE_EXISTING",
+            "ADD_ALPHA=NO",
+        ],
+        dstNodata=float("nan"),
+    )
 
     result = gdal.Warp(output_path, input_path, options=warp_opts)
     if result is None:
