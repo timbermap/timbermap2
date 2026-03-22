@@ -198,18 +198,23 @@ function LayerAccordion({
         <div className="space-y-0.5 mt-0.5">
           {layers.map(layer => (
             <div key={layer.id} className="relative">
-              <div
-                className="group flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer"
-                onClick={() => onToggleLayer(layer.id)}
-              >
-                {/* Checkbox */}
-                <div className={`w-3.5 h-3.5 rounded border-2 flex-shrink-0 transition-colors ${
-                  layer.visible ? 'bg-[#2C5F45] border-[#2C5F45]' : 'border-gray-300 bg-white'
-                }`} />
+              <div className="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50">
+                {/* Toggle checkbox — left */}
+                <div
+                  className={`w-3.5 h-3.5 rounded border-2 flex-shrink-0 transition-colors cursor-pointer ${
+                    layer.visible ? 'bg-[#2C5F45] border-[#2C5F45]' : 'border-gray-300 bg-white'
+                  }`}
+                  onClick={() => onToggleLayer(layer.id)}
+                />
 
-                {/* Name + opacity bar */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-700 truncate">{layer.name}</p>
+                {/* Name — click to zoom */}
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => layer.bbox && onZoomTo(layer)}
+                >
+                  <p className={`text-xs font-medium truncate transition-colors ${
+                    layer.bbox ? 'text-gray-700 hover:text-[#2C5F45]' : 'text-gray-700'
+                  }`}>{layer.name}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <div className="w-10 h-1 rounded-full bg-gray-100 overflow-hidden">
                       <div
@@ -228,7 +233,7 @@ function LayerAccordion({
                     e.stopPropagation()
                     setActivePopover(activePopover === layer.id ? null : layer.id)
                   }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#2C5F45] p-0.5 rounded"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#2C5F45] p-0.5 rounded flex-shrink-0"
                   title="Layer options"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
