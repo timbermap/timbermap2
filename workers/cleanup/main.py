@@ -1,18 +1,6 @@
 """
 workers/cleanup/main.py
 Cleanup worker — deletes rasters, vectors, and full user data.
-
-Deploy:
-    gcloud run deploy timbermap-cleanup-worker \\
-        --source . --region us-central1 --platform managed \\
-        --no-allow-unauthenticated --port 8080 --cpu 1 --memory 512Mi \\
-        --min-instances 0 --max-instances 3 --timeout 300 \\
-        --add-cloudsql-instances timbermap-prod:us-central1:timbermap-db \\
-        --set-env-vars "GCP_PROJECT=timbermap-prod,GCS_BUCKET=timbermap-data,..." \\
-        --update-secrets="DB_PASSWORD=pg-password:latest,GEOSERVER_PASSWORD=geoserver-password:latest"
-
-Called by: FastAPI main API (timbermap-api) via internal Cloud Run HTTP requests.
-Endpoints are NOT public (--no-allow-unauthenticated).
 """
 
 import os
@@ -69,7 +57,6 @@ def _gcs_client():
 
 
 def delete_gcs_blobs(prefix: str):
-    """Delete all GCS objects under a given prefix."""
     client = _gcs_client()
     bucket = client.bucket(GCS_BUCKET)
     blobs  = list(bucket.list_blobs(prefix=prefix))
@@ -79,7 +66,6 @@ def delete_gcs_blobs(prefix: str):
 
 
 def delete_gcs_blob(path: str):
-    """Delete a single GCS object. Non-fatal if missing."""
     try:
         _gcs_client().bucket(GCS_BUCKET).blob(path).delete()
     except Exception:
@@ -108,7 +94,14 @@ def drop_postgis_schema(schema: str):
 
 # ── Low-level delete primitives ───────────────────────────────────────────────
 
-def _delete_one_image(image_id: str, clerk_id: str, cur):
+def _get_clerk_id_for_owner(owner_id, cur) -> str:
+    """Resolve clerk_id from owner_id (internal UUID)."""
+    cur.execute("SELECT clerk_id FROM users WHERE id = %s", (owner_id,))
+    row = cur.fetchone()
+    return row["clerk_id"] if row else str(owner_id)
+
+
+def _delete_one_image(image_id: str, owner_id, cur):
     """
     Delete a single raster image:
       1. GeoServer layer + store
@@ -117,6 +110,7 @@ def _delete_one_image(image_id: str, clerk_id: str, cur):
       4. images row
     """
     log.info("Deleting image %s", image_id)
+    clerk_id = _get_clerk_id_for_owner(owner_id, cur)
 
     # GeoServer (best-effort)
     try:
@@ -127,15 +121,17 @@ def _delete_one_image(image_id: str, clerk_id: str, cur):
     # GCS
     delete_gcs_blob(f"users/cogs/{image_id}.tif")
     delete_gcs_blob(f"users/thumbnails/{image_id}.jpg")
-    # Original upload (rasters stored under users/{clerk_id}/rasters/)
-    delete_gcs_blobs(f"users/{clerk_id}/rasters/{image_id}")
+    delete_gcs_blobs(f"users/{clerk_id}/rasters/")
 
-    # DB
-    cur.execute("DELETE FROM jobs WHERE image_id = %s", (image_id,))
+    # DB — jobs linked via input_ref JSON
+    cur.execute(
+        "DELETE FROM jobs WHERE input_ref->>'image_id' = %s",
+        (str(image_id),)
+    )
     cur.execute("DELETE FROM images WHERE id = %s", (image_id,))
 
 
-def _delete_one_vector(vector_id: str, clerk_id: str, cur):
+def _delete_one_vector(vector_id: str, owner_id, cur):
     """
     Delete a single vector:
       1. GeoServer FeatureType
@@ -145,6 +141,7 @@ def _delete_one_vector(vector_id: str, clerk_id: str, cur):
       5. vectors row
     """
     log.info("Deleting vector %s", vector_id)
+    clerk_id = _get_clerk_id_for_owner(owner_id, cur)
 
     # GeoServer (best-effort)
     try:
@@ -157,10 +154,13 @@ def _delete_one_vector(vector_id: str, clerk_id: str, cur):
     drop_postgis_table("vectors", table)
 
     # GCS original upload
-    delete_gcs_blobs(f"users/{clerk_id}/vectors/{vector_id}")
+    delete_gcs_blobs(f"users/{clerk_id}/vectors/")
 
-    # DB
-    cur.execute("DELETE FROM jobs WHERE vector_id = %s", (vector_id,))
+    # DB — jobs linked via input_ref JSON
+    cur.execute(
+        "DELETE FROM jobs WHERE input_ref->>'vector_id' = %s",
+        (str(vector_id),)
+    )
     cur.execute("DELETE FROM vectors WHERE id = %s", (vector_id,))
 
 
@@ -173,19 +173,16 @@ def health():
 
 @app.delete("/raster/{image_id}")
 def delete_raster(image_id: str):
-    """
-    DELETE a single raster:
-    GeoServer layer + GCS files + DB record + related jobs.
-    """
     conn = get_conn()
     cur  = conn.cursor()
     try:
-        cur.execute("SELECT clerk_id FROM images WHERE id = %s", (image_id,))
+        # images table uses owner_id (internal UUID), not clerk_id
+        cur.execute("SELECT owner_id FROM images WHERE id = %s", (image_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail=f"Image {image_id} not found")
 
-        _delete_one_image(image_id, row["clerk_id"], cur)
+        _delete_one_image(image_id, row["owner_id"], cur)
         conn.commit()
         return {"deleted": "raster", "image_id": image_id}
 
@@ -202,19 +199,15 @@ def delete_raster(image_id: str):
 
 @app.delete("/vector/{vector_id}")
 def delete_vector(vector_id: str):
-    """
-    DELETE a single vector:
-    GeoServer layer + PostGIS table + GCS files + DB record + related jobs.
-    """
     conn = get_conn()
     cur  = conn.cursor()
     try:
-        cur.execute("SELECT clerk_id FROM vectors WHERE id = %s", (vector_id,))
+        cur.execute("SELECT owner_id FROM vectors WHERE id = %s", (vector_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail=f"Vector {vector_id} not found")
 
-        _delete_one_vector(vector_id, row["clerk_id"], cur)
+        _delete_one_vector(vector_id, row["owner_id"], cur)
         conn.commit()
         return {"deleted": "vector", "vector_id": vector_id}
 
@@ -231,58 +224,45 @@ def delete_vector(vector_id: str):
 
 @app.delete("/user/{clerk_id}")
 def delete_user(clerk_id: str):
-    """
-    Full user cascade:
-      • All images   → GeoServer + GCS + DB
-      • All vectors  → GeoServer + PostGIS + GCS + DB
-      • PostGIS user schema (user_{clerk_id}) if it exists
-      • All GCS objects under users/{clerk_id}/
-      • jobs, user_model_permissions, users rows
-
-    This is irreversible. Caller (API) must verify auth before invoking.
-    """
     conn = get_conn()
     cur  = conn.cursor()
     deleted = {"images": [], "vectors": []}
 
     try:
-        # Verify user exists
         cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
-        if not cur.fetchone():
+        user_row = cur.fetchone()
+        if not user_row:
             raise HTTPException(status_code=404, detail=f"User {clerk_id} not found")
+        owner_id = user_row["id"]
 
-        # --- Images ---
-        cur.execute("SELECT id FROM images WHERE clerk_id = %s", (clerk_id,))
+        # Images — filter by owner_id
+        cur.execute("SELECT id FROM images WHERE owner_id = %s", (owner_id,))
         image_ids = [r["id"] for r in cur.fetchall()]
         for iid in image_ids:
-            _delete_one_image(iid, clerk_id, cur)
+            _delete_one_image(iid, owner_id, cur)
             deleted["images"].append(iid)
 
-        # --- Vectors ---
-        cur.execute("SELECT id FROM vectors WHERE clerk_id = %s", (clerk_id,))
+        # Vectors — filter by owner_id
+        cur.execute("SELECT id FROM vectors WHERE owner_id = %s", (owner_id,))
         vector_ids = [r["id"] for r in cur.fetchall()]
         for vid in vector_ids:
-            _delete_one_vector(vid, clerk_id, cur)
+            _delete_one_vector(vid, owner_id, cur)
             deleted["vectors"].append(vid)
 
-        # --- Remaining GCS objects (any orphaned files) ---
+        # Remaining GCS objects
         delete_gcs_blobs(f"users/{clerk_id}/")
 
-        # --- Drop per-user PostGIS schema if present ---
-        # Convention: user schemas are named  user_<clerk_id_underscored>
+        # Drop per-user PostGIS schema if present
         schema = f"user_{clerk_id.replace('-', '_')}"
         drop_postgis_schema(schema)
 
-        # --- DB: remaining user data ---
+        # DB cleanup
         cur.execute("DELETE FROM user_model_permissions WHERE clerk_id = %s", (clerk_id,))
-        cur.execute("DELETE FROM jobs WHERE clerk_id = %s", (clerk_id,))
+        cur.execute("DELETE FROM jobs WHERE owner_id = %s", (owner_id,))
         cur.execute("DELETE FROM users WHERE clerk_id = %s", (clerk_id,))
 
         conn.commit()
-        log.info(
-            "User %s deleted: %d images, %d vectors",
-            clerk_id, len(deleted["images"]), len(deleted["vectors"]),
-        )
+        log.info("User %s deleted: %d images, %d vectors", clerk_id, len(deleted["images"]), len(deleted["vectors"]))
         return {
             "deleted": "user",
             "clerk_id": clerk_id,
@@ -303,38 +283,7 @@ def delete_user(clerk_id: str):
 
 @app.delete("/project/{project_id}")
 def delete_project(project_id: str):
-    """
-    Project cascade — deletes all images, vectors, and jobs associated with
-    a project_id.
-
-    NOTE: This endpoint is ready for when a projects table is added.
-    Currently, 'project_id' is treated as a filtering field on the images
-    and vectors tables.  Add a 'project_id' column to both tables and this
-    will work as-is.  Until then it returns 501.
-    """
-    # TODO: uncomment once project_id columns exist on images + vectors tables.
-    #
-    # conn = get_conn()
-    # cur  = conn.cursor()
-    # try:
-    #     cur.execute("SELECT id, clerk_id FROM images WHERE project_id = %s", (project_id,))
-    #     for row in cur.fetchall():
-    #         _delete_one_image(row["id"], row["clerk_id"], cur)
-    #
-    #     cur.execute("SELECT id, clerk_id FROM vectors WHERE project_id = %s", (project_id,))
-    #     for row in cur.fetchall():
-    #         _delete_one_vector(row["id"], row["clerk_id"], cur)
-    #
-    #     cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
-    #     conn.commit()
-    #     return {"deleted": "project", "project_id": project_id}
-    # finally:
-    #     cur.close(); conn.close()
-
     raise HTTPException(
         status_code=501,
-        detail=(
-            "Project cascade requires a project_id column on images + vectors tables. "
-            "Add that column and uncomment the implementation in cleanup/main.py."
-        ),
+        detail="Project cascade requires a project_id column on images + vectors tables.",
     )
