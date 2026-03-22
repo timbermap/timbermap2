@@ -225,7 +225,7 @@ export default function MapPage() {
           // COG protocol — use tiles array with cog:// prefix
           map.current!.addSource(sourceId, {
             type: 'raster',
-            tiles: [`cog://${layer.cog_url}`],
+            tiles: [`cog://${layer.cog_url.replace(/^https?:\/\//, "")}`],
             tileSize: 256,
           })
           map.current!.addLayer({
