@@ -164,6 +164,12 @@ export default function VectorsPage() {
     return (bytes / 1e3).toFixed(0) + ' KB'
   }
 
+  function formatDate(iso: string | null) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+
   async function handleDownload(vectorId: string) {
     if (!user) return
     const res = await fetch(`${API}/vectors/${vectorId}/download?clerk_id=${user.id}`)
@@ -229,7 +235,6 @@ export default function VectorsPage() {
         </div>
       )}
 
-      {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
@@ -256,14 +261,13 @@ export default function VectorsPage() {
         </div>
       )}
 
-      {/* Delete confirm modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
             <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Delete shapefile</h2>
             <p className="text-sm text-gray-400 mb-1">This will permanently delete:</p>
             <p className="text-sm font-medium text-gray-700 mb-4">{deletingFilename}</p>
-            <p className="text-xs text-gray-400 mb-6">The file will be removed from GCS, GeoServer, PostGIS, and the database. This cannot be undone.</p>
+            <p className="text-xs text-gray-400 mb-6">The file will be removed from storage, PostGIS, and the database. This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={handleDelete} disabled={isDeleting}
                 className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
@@ -299,6 +303,7 @@ export default function VectorsPage() {
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Geometry</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Area (ha)</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Size</th>
+                <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Uploaded</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Status</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Actions</th>
               </tr>
@@ -313,6 +318,7 @@ export default function VectorsPage() {
                     <td className="px-5 py-3.5 text-gray-500">{v.geometry_type || '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{v.area_ha ? v.area_ha.toLocaleString() : '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{formatSize(v.filesize)}</td>
+                    <td className="px-5 py-3.5 text-gray-400 text-xs">{formatDate(v.created_at)}</td>
                     <td className="px-5 py-3.5">
                       {isActive ? (
                         <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">

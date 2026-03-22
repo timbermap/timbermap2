@@ -10,6 +10,7 @@ type ImageFile = {
   num_bands: number | null
   area_ha: number | null
   filesize: number | null
+  pixel_size_x: number | null
   status: string
   created_at: string
 }
@@ -173,11 +174,38 @@ export default function ImagesPage() {
     }
   }
 
+  function formatGSD(pixelSize: number | null) {
+    if (!pixelSize) return '—'
+    if (pixelSize < 1) return `${(pixelSize * 100).toFixed(0)} cm`
+    return `${pixelSize.toFixed(2)} m`
+  }
+
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  }
+
   function formatSize(bytes: number | null) {
     if (!bytes) return '—'
     if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
     if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + ' MB'
     return (bytes / 1e3).toFixed(0) + ' KB'
+  }
+
+  function formatDate(iso: string | null) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+
+  function formatGSD(pixelSize: number | null, epsg: string | null) {
+    if (!pixelSize) return '—'
+    let meters = pixelSize
+    // If EPSG:4326, pixel size is in degrees → convert to meters
+    if (epsg === '4326' || epsg === 'EPSG:4326') {
+      meters = pixelSize * 111320
+    }
+    if (meters < 1) return (meters * 100).toFixed(1) + ' cm'
+    return meters.toFixed(2) + ' m'
   }
 
   async function handleDownload(imageId: string) {
@@ -285,7 +313,7 @@ export default function ImagesPage() {
             <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Delete image</h2>
             <p className="text-sm text-gray-400 mb-1">This will permanently delete:</p>
             <p className="text-sm font-medium text-gray-700 mb-4">{deletingFilename}</p>
-            <p className="text-xs text-gray-400 mb-6">The file will be removed from GCS, GeoServer, and the database. This cannot be undone.</p>
+            <p className="text-xs text-gray-400 mb-6">The file will be removed from storage and the database. This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={handleDelete} disabled={isDeleting}
                 className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
@@ -319,8 +347,10 @@ export default function ImagesPage() {
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Filename</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">EPSG</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Bands</th>
+                <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">GSD</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Area (ha)</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Size</th>
+                <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Uploaded</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Status</th>
                 <th className="text-left px-5 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">Actions</th>
               </tr>
@@ -333,8 +363,10 @@ export default function ImagesPage() {
                     <td className="px-5 py-3.5 text-gray-900 font-medium">{img.filename}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.epsg || '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.num_bands || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{formatGSD(img.pixel_size_x)}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{formatSize(img.filesize)}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{formatDate(img.created_at)}</td>
                     <td className="px-5 py-3.5">
                       {isActive ? (
                         <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">

@@ -73,7 +73,7 @@ def get_images(owner_id):
     cur.execute("""
         SELECT id, filename, gcs_path, epsg, num_bands,
                area_ha, filesize, status, geoserver_layer, created_at,
-               bbox_minx, bbox_miny, bbox_maxx, bbox_maxy
+               bbox_minx, bbox_miny, bbox_maxx, bbox_maxy, pixel_size_x
         FROM images WHERE owner_id = %s
         ORDER BY created_at DESC
     """, (owner_id,))
