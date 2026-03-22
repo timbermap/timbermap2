@@ -212,7 +212,7 @@ export default function MapPage() {
           // Use COG protocol — reads GeoTIFF directly with range requests
           map.current!.addSource(sourceId, {
             type: 'raster',
-            url: `cog://${layer.cog_url.replace('https://', '')}`,
+            url: `cog://${layer.cog_url}`,
             tileSize: 256,
           })
           map.current!.addLayer({
