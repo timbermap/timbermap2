@@ -356,7 +356,7 @@ export default function ImagesPage() {
                     <td className="px-5 py-3.5 text-gray-900 font-medium">{img.filename}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.epsg || '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.num_bands || '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-500">{formatGSD(img.pixel_size_x)}</td>
+                    <td className="px-5 py-3.5 text-gray-500">{formatGSD(img.pixel_size_x, img.epsg)}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{formatSize(img.filesize)}</td>
                     <td className="px-5 py-3.5 text-gray-500">{formatDate(img.created_at)}</td>
