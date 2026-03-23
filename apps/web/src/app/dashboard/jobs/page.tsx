@@ -152,20 +152,29 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     if (!isLoaded) return
     if (!user) { setLoading(false); return }
-    const res = await fetch(`${API}/jobs/${user.id}`)
-    const data = await res.json()
-    setJobs(data.jobs || [])
-    setLoading(false)
+    try {
+      const res = await fetch(`${API}/jobs/${user.id}`, { signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setJobs(data.jobs || [])
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      if (e instanceof TypeError) return
+    } finally {
+      setLoading(false)
+    }
   }, [user, isLoaded, API])
 
   useEffect(() => {
-    fetchJobs()
-    const interval = setInterval(fetchJobs, 5000)
-    return () => clearInterval(interval)
-  }, [fetchJobs])
+    if (!isLoaded || !user) return
+    const controller = new AbortController()
+    fetchJobs(controller.signal)
+    const interval = setInterval(() => fetchJobs(controller.signal), 5000)
+    return () => { controller.abort(); clearInterval(interval) }
+  }, [user, isLoaded, fetchJobs])
 
   const grouped = groups.map(g => ({
     ...g,
@@ -180,7 +189,7 @@ export default function JobsPage() {
           <h1 className="text-2xl font-semibold text-[#1C1C1C]">Jobs</h1>
           <p className="text-gray-400 mt-1 text-sm">All background processing tasks — refreshes every 5 seconds</p>
         </div>
-        <button onClick={fetchJobs}
+        <button onClick={() => fetchJobs()}
           className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
           Refresh
         </button>

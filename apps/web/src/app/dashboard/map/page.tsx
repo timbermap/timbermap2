@@ -123,6 +123,11 @@ function Accordion({ title, icon, badge, children, defaultOpen = false }: {
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
+
+  useEffect(() => {
+    setOpen(defaultOpen)
+  }, [defaultOpen])
+
   return (
     <div className="border-b border-white/5 last:border-0">
       <button onClick={() => setOpen(o => !o)}

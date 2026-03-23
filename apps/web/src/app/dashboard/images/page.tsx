@@ -53,36 +53,46 @@ export default function ImagesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchData = useCallback(async () => {
-    if (!isLoaded || !user) { setLoading(false); return }
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
+    if (!isLoaded) return
+    if (!user) { setLoading(false); return }
     try {
-      const [imgRes, jobsRes] = await Promise.all([
-        fetch(`${API}/images/${user.id}`),
-        fetch(`${API}/jobs/${user.id}`),
+      const [imgResult, jobsResult] = await Promise.allSettled([
+        fetch(`${API}/images/${user.id}`, { signal }),
+        fetch(`${API}/jobs/${user.id}`,   { signal }),
       ])
-      const imgData = await imgRes.json()
-      const jobsData = await jobsRes.json()
-      setImages(imgData.images || [])
+
+      if (imgResult.status === 'fulfilled' && imgResult.value.ok) {
+        const imgData = await imgResult.value.json()
+        setImages(imgData.images || [])
+      }
+
       const active = new Set<string>()
-      for (const job of (jobsData.jobs || []) as Job[]) {
-        if (job.status === 'queued' || job.status === 'running') {
-          const iid = job.input_ref?.image_id as string | undefined
-          if (iid) active.add(iid)
+      if (jobsResult.status === 'fulfilled' && jobsResult.value.ok) {
+        const jobsData = await jobsResult.value.json()
+        for (const job of (jobsData.jobs || []) as Job[]) {
+          if (job.status === 'queued' || job.status === 'running') {
+            const iid = job.input_ref?.image_id as string | undefined
+            if (iid) active.add(iid)
+          }
         }
       }
       setActiveImageIds(active)
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
       console.error('fetchData failed', e)
     } finally {
       setLoading(false)
     }
   }, [user, isLoaded, API])
 
-  useEffect(() => { if (isLoaded && user) fetchData() }, [user, fetchData])
   useEffect(() => {
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
-  }, [fetchData])
+    if (!isLoaded || !user) return
+    const controller = new AbortController()
+    fetchData(controller.signal)
+    const interval = setInterval(() => fetchData(controller.signal), 5000)
+    return () => { controller.abort(); clearInterval(interval) }
+  }, [user, isLoaded, fetchData])
 
   async function uploadSingle(item: UploadItem, index: number) {
     if (!isLoaded || !user) { setLoading(false); return }
