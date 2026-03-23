@@ -1,6 +1,6 @@
 """
 workers/raster/main.py
-Raster ingest + COG worker.
+Raster ingest + COG worker — memory-optimized via GDAL disk-based processing.
 """
 
 import os
@@ -94,6 +94,7 @@ def upload_to_gcs(local_path: str, gcs_path: str):
 # ── Raster processing ─────────────────────────────────────────────────────────
 
 def extract_metadata(tif_path: str) -> dict:
+    """Read metadata without loading pixel data into memory."""
     import rasterio
     from rasterio.warp import transform_bounds
     with rasterio.open(tif_path) as src:
@@ -124,49 +125,93 @@ def extract_metadata(tif_path: str) -> dict:
         }
 
 
+def strip_alpha_gdal(input_path: str, output_path: str) -> str:
+    """
+    If input has 4 bands, strip the alpha band using gdal_translate
+    (disk-based, no full array in RAM).
+    Returns output_path if stripped, input_path if not needed.
+    """
+    from osgeo import gdal
+    gdal.UseExceptions()
+    ds = gdal.Open(input_path)
+    if ds is None:
+        raise RuntimeError(f"Cannot open {input_path}")
+    num_bands = ds.RasterCount
+    ds = None  # close
+
+    if num_bands != 4:
+        return input_path
+
+    # Use gdal_translate to select only bands 1,2,3 — purely disk-based
+    opts = gdal.TranslateOptions(
+        bandList=[1, 2, 3],
+        format="GTiff",
+        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512"],
+    )
+    result = gdal.Translate(output_path, input_path, options=opts)
+    if result is None:
+        raise RuntimeError(f"gdal.Translate strip alpha failed for {input_path}")
+    result.FlushCache()
+    result = None
+    return output_path
+
+
 def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
+    """
+    Generate thumbnail by reading a heavily downsampled version — low memory usage.
+    Uses rasterio overview reading which doesn't load the full raster.
+    """
     import rasterio
     from rasterio.enums import Resampling
     from PIL import Image
+
     with rasterio.open(tif_path) as src:
+        # Calculate scale factor — read at thumbnail size only
         scale = min(size / src.width, size / src.height)
         new_w = max(1, int(src.width * scale))
         new_h = max(1, int(src.height * scale))
+
+        # Read only at the target size — rasterio handles the downsampling
+        # without loading the full raster into memory
         if src.count >= 3:
-            data = src.read([1, 2, 3], out_shape=(3, new_h, new_w), resampling=Resampling.average)
+            data = src.read(
+                [1, 2, 3],
+                out_shape=(3, new_h, new_w),
+                resampling=Resampling.average
+            )
             img_array = np.moveaxis(data, 0, -1)
         else:
-            data = src.read(1, out_shape=(new_h, new_w), resampling=Resampling.average)
-            img_array = np.stack([data, data, data], axis=-1)
-        img_min, img_max = img_array.min(), img_array.max()
+            data = src.read(
+                1,
+                out_shape=(1, new_h, new_w),
+                resampling=Resampling.average
+            )
+            img_array = np.stack([data[0], data[0], data[0]], axis=-1)
+
+        # Normalize to 0-255
+        img_min, img_max = float(img_array.min()), float(img_array.max())
         if img_max > img_min:
-            img_array = (img_array - img_min) / (img_max - img_min) * 255
-        Image.fromarray(img_array.astype(np.uint8), "RGB").save(thumb_path, "JPEG", quality=85)
+            img_array = ((img_array - img_min) / (img_max - img_min) * 255)
+        img_array = img_array.astype(np.uint8)
+        Image.fromarray(img_array, "RGB").save(thumb_path, "JPEG", quality=85)
 
 
 def convert_to_cog(input_path: str, output_path: str):
     """
-    Reproject to EPSG:3857 + GoogleMapsCompatible tiling.
-    Strips alpha band on 4-band images before warping.
-    Adds alpha band (dstAlpha) so nodata borders are transparent.
+    Convert to Cloud-Optimized GeoTIFF in EPSG:3857.
+    Uses gdal.Warp with COG driver — fully disk-based, minimal RAM.
+    Strips alpha band first if present (also disk-based via gdal.Translate).
     """
-    import rasterio
     from osgeo import gdal
     gdal.UseExceptions()
 
-    with rasterio.open(input_path) as src:
-        num_bands = src.count
+    # Step 1: strip alpha band if needed (disk-based)
+    stripped_path = input_path + "_rgb.tif"
+    working_path = strip_alpha_gdal(input_path, stripped_path)
 
-    if num_bands == 4:
-        stripped_path = input_path + "_rgb.tif"
-        with rasterio.open(input_path) as src:
-            data    = src.read([1, 2, 3])
-            profile = src.profile.copy()
-            profile.update(count=3)
-            with rasterio.open(stripped_path, "w", **profile) as dst:
-                dst.write(data)
-        input_path = stripped_path
-
+    # Step 2: warp to EPSG:3857 + write as COG in one pass
+    # GDAL COG driver handles tiling + overviews internally without
+    # loading the full raster into RAM
     warp_opts = gdal.WarpOptions(
         dstSRS="EPSG:3857",
         resampleAlg=gdal.GRA_Bilinear,
@@ -176,18 +221,27 @@ def convert_to_cog(input_path: str, output_path: str):
             "TILING_SCHEME=GoogleMapsCompatible",
             "COMPRESS=DEFLATE",
             "OVERVIEWS=IGNORE_EXISTING",
+            "NUM_THREADS=ALL_CPUS",   # use all CPUs for faster processing
         ],
         dstAlpha=True,
         warpOptions=["INIT_DEST=255,255,255,0"],
+        warpMemoryLimit=512,          # limit GDAL warp memory to 512MB
+        multithread=True,
     )
-    result = gdal.Warp(output_path, input_path, options=warp_opts)
+    result = gdal.Warp(output_path, working_path, options=warp_opts)
     if result is None:
-        raise RuntimeError(f"gdal.Warp COG conversion failed for {input_path}")
+        raise RuntimeError(f"gdal.Warp COG conversion failed for {working_path}")
     result.FlushCache()
+    result = None
+
+    # Clean up stripped file if created
+    if working_path != input_path and os.path.exists(working_path):
+        os.remove(working_path)
 
 
 def warp_raster(input_path: str, output_path: str,
                 target_epsg: str, target_resolution_m: Optional[float] = None):
+    """Reproject raster — disk-based via gdal.Warp."""
     from osgeo import gdal
     gdal.UseExceptions()
     warp_opts = gdal.WarpOptions(
@@ -197,11 +251,14 @@ def warp_raster(input_path: str, output_path: str,
         resampleAlg=gdal.GRA_Bilinear,
         creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512"],
         format="GTiff",
+        warpMemoryLimit=512,
+        multithread=True,
     )
     result = gdal.Warp(output_path, input_path, options=warp_opts)
     if result is None:
         raise RuntimeError(f"gdal.Warp failed for {input_path}")
     result.FlushCache()
+    result = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -293,7 +350,7 @@ async def transform_raster(job: TransformJob):
             update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
             warp_raster(src_path, warped_path, job.target_epsg, job.target_resolution_m)
 
-            # Extract metadata from warped file (correct EPSG) before COG conversion
+            # Extract metadata from warped file before COG conversion
             meta_warped = extract_metadata(warped_path)
 
             update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
@@ -305,7 +362,7 @@ async def transform_raster(job: TransformJob):
             update_image(
                 job.image_id,
                 status="ready",
-                epsg=meta_warped["epsg"],  # use original target EPSG, not 3857
+                epsg=meta_warped["epsg"],
                 num_bands=meta["num_bands"],
                 pixel_size_x=meta["pixel_size_x"],
                 pixel_size_y=meta["pixel_size_y"],
