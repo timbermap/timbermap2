@@ -234,8 +234,13 @@ def delete_vector(vector_id: str, clerk_id: str):
 
 
 
+class AoiRequest(BaseModel):
+    clerk_id: str
+    name: str
+    geojson: dict
+
 @app.post("/vectors/from-aoi")
-def create_vector_from_aoi(req: dict):
+def create_vector_from_aoi(req: AoiRequest):
     """
     Save an AOI GeoJSON polygon as a vector in PostGIS and the catalog.
     Body: { clerk_id, name, geojson }
@@ -245,12 +250,9 @@ def create_vector_from_aoi(req: dict):
         from shapely.geometry import shape
         from sqlalchemy import create_engine, text
 
-        clerk_id = req.get("clerk_id")
-        name     = req.get("name", "AOI")
-        geojson  = req.get("geojson")
-
-        if not clerk_id or not geojson:
-            raise HTTPException(status_code=400, detail="clerk_id and geojson required")
+        clerk_id = req.clerk_id
+        name     = req.name or "AOI"
+        geojson  = req.geojson
 
         user_id = get_user_id(clerk_id)
         if not user_id:
