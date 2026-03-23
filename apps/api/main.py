@@ -243,63 +243,54 @@ class AoiRequest(BaseModel):
 def create_vector_from_aoi(req: AoiRequest):
     """
     Save an AOI GeoJSON polygon as a vector in PostGIS and the catalog.
-    Body: { clerk_id, name, geojson }
+    Uses psycopg2 + ST_GeomFromGeoJSON — no geopandas required.
     """
+    import json as json_lib
     try:
-        import geopandas as gpd
-        from shapely.geometry import shape
-        from sqlalchemy import create_engine, text
-
-        clerk_id = req.clerk_id
-        name     = req.name or "AOI"
-        geojson  = req.geojson
-
-        user_id = get_user_id(clerk_id)
+        user_id = get_user_id(req.clerk_id)
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Create GeoDataFrame from GeoJSON
-        geom = shape(geojson)
-        gdf  = gpd.GeoDataFrame([{"name": name}], geometry=[geom], crs="EPSG:4326")
+        name     = req.name.strip() or "AOI"
+        filename = f"{name}.geojson"
 
         # Insert into catalog
-        filename = f"{name}.geojson"
-        file_id  = insert_vector(user_id, filename, f"aoi/{user_id}/{name}.geojson", 0)
+        file_id = insert_vector(user_id, filename, f"aoi/{req.clerk_id}/{name}.geojson", 0)
+        table   = f"vec_{str(file_id).replace('-', '_')}"
+        geojson_str = json_lib.dumps(req.geojson)
 
-        # Save to PostGIS
-        host     = os.getenv("DB_HOST", "127.0.0.1")
-        password = os.getenv("DB_PASSWORD")
-        dbname   = os.getenv("DB_NAME", "timbermap")
-        db_user  = os.getenv("DB_USER", "postgres")
-        if host.startswith("/cloudsql"):
-            url = f"postgresql+psycopg2://{db_user}:{password}@/{dbname}?host={host}"
-        else:
-            port = os.getenv("DB_PORT", "5432")
-            url  = f"postgresql+psycopg2://{db_user}:{password}@{host}:{port}/{dbname}"
+        conn = get_db_conn()
+        cur  = conn.cursor()
 
-        engine = create_engine(url)
-        table  = f"vec_{str(file_id).replace('-', '_')}"
+        # Create schema + table
+        cur.execute('CREATE SCHEMA IF NOT EXISTS "vectors"')
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS "vectors"."{table}" (
+                id SERIAL PRIMARY KEY,
+                name TEXT,
+                geometry geometry(Geometry, 4326)
+            )
+        """)
 
-        with engine.connect() as conn:
-            conn.execute(text('CREATE SCHEMA IF NOT EXISTS "vectors"'))
-            conn.commit()
+        # Insert polygon
+        cur.execute(f"""
+            INSERT INTO "vectors"."{table}" (name, geometry)
+            VALUES (%s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
+        """, (name, geojson_str))
 
-        gdf.to_postgis(table, engine, schema="vectors", if_exists="replace", index=False)
-
-        # Calculate area
-        utm = gdf.estimate_utm_crs()
-        area_ha = round(float(gdf.to_crs(utm).geometry.area.sum()) / 10000, 2)
+        # Calculate area in ha
+        cur.execute("SELECT ST_Area(ST_Transform(ST_GeomFromGeoJSON(%s), 3857)) / 10000 AS area_ha", (geojson_str,))
+        area_ha = round(cur.fetchone()["area_ha"], 2)
 
         # Update vector record
-        conn2 = get_db_conn()
-        cur   = conn2.cursor()
         cur.execute("""
             UPDATE vectors SET status = 'ready', epsg = '4326',
             geometry_type = 'Polygon', area_ha = %s WHERE id = %s
         """, (area_ha, file_id))
-        conn2.commit()
+
+        conn.commit()
         cur.close()
-        conn2.close()
+        conn.close()
 
         return {"vector_id": str(file_id), "name": filename, "area_ha": area_ha}
     except HTTPException:
