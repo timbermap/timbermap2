@@ -178,7 +178,8 @@ function LayerRow({ layer, colorDot, onToggle, onZoomTo, onOpacityChange }: {
         <div className="w-2 h-2 flex-shrink-0" style={{ borderRadius: 99, backgroundColor: colorDot }} />
       )}
 
-      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => layer.bbox && onZoomTo(layer)}>
+      <div className={`flex-1 min-w-0 ${layer.bbox ? 'cursor-pointer' : 'cursor-default'}`}
+        onClick={() => { if (layer.bbox) onZoomTo(layer) }}>
         <p className={`text-xs font-medium truncate transition-colors ${
           layer.visible ? 'text-white/75' : 'text-white/25'
         } ${layer.bbox ? 'hover:text-[#5A9E7C]' : ''}`}>
@@ -383,7 +384,7 @@ export default function MapPage() {
   const activeBasemap = BASEMAPS.find(b => b.id === basemap)
 
   return (
-    <div className="flex -m-10 overflow-hidden" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div style={{ display: 'flex', margin: '-2.5rem', height: 'calc(100vh)', overflow: 'hidden' }}>
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <div className="w-64 bg-[#0f1f16] flex flex-col border-r border-white/5 flex-shrink-0">
