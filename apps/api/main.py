@@ -332,24 +332,13 @@ def get_layers(clerk_id: str):
                 signed_url = blob.generate_signed_url(
                     version="v4", expiration=timedelta(days=7), method="GET"
                 )
-                # Read bbox from COG metadata
+                # Read bbox from DB columns (populated during ingest)
                 bbox = None
-                try:
-                    import rasterio
-                    from rasterio.warp import transform_bounds
-                    with rasterio.open(signed_url) as src:
-                        bounds = src.bounds
-                        # Transform to EPSG:4326 for consistent bbox
-                        if src.crs and src.crs.to_epsg() != 4326:
-                            left, bottom, right, top = transform_bounds(
-                                src.crs, "EPSG:4326",
-                                bounds.left, bounds.bottom, bounds.right, bounds.top
-                            )
-                        else:
-                            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
-                        bbox = [left, bottom, right, top]
-                except Exception:
-                    pass
+                if all(img.get(k) is not None for k in ["bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy"]):
+                    bbox = [
+                        float(img["bbox_minx"]), float(img["bbox_miny"]),
+                        float(img["bbox_maxx"]), float(img["bbox_maxy"]),
+                    ]
                 layers.append({
                     "id":      img["id"],
                     "name":    img["filename"],
