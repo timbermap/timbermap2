@@ -383,7 +383,7 @@ export default function MapPage() {
   const activeBasemap = BASEMAPS.find(b => b.id === basemap)
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] -m-10 overflow-hidden">
+    <div className="flex -m-10 overflow-hidden" style={{ height: 'calc(100vh - 2rem)' }}>
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <div className="w-64 bg-[#0f1f16] flex flex-col border-r border-white/5 flex-shrink-0">
@@ -558,8 +558,8 @@ export default function MapPage() {
       </div>
 
       {/* ── Map ──────────────────────────────────────────────────────────── */}
-      <div className="flex-1 relative min-w-0">
-        <div ref={mapContainer} className="absolute inset-0" />
+      <div className="flex-1 relative min-w-0" style={{ minHeight: 0 }}>
+        <div ref={mapContainer} style={{ position: 'absolute', inset: 0 }} />
         {!mapReady && (
           <div className="absolute inset-0 bg-[#0f1f16] flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
