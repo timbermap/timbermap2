@@ -44,49 +44,44 @@ export default function VectorsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchData = useCallback(async (signal?: AbortSignal) => {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+  // ── fetchData sin dependencias de estado que causen loop ──────────────────
+  const fetchData = useCallback(async () => {
+    if (!isLoaded || !user) { setLoading(false); return }
     try {
-      const [vecResult, jobsResult] = await Promise.allSettled([
-        fetch(`${API}/vectors/${user.id}`, { signal }),
-        fetch(`${API}/jobs/${user.id}`,    { signal }),
+      const [vecRes, jobsRes] = await Promise.all([
+        fetch(`${API}/vectors/${user.id}`),
+        fetch(`${API}/jobs/${user.id}`),
       ])
-
-      if (vecResult.status === 'fulfilled' && vecResult.value.ok) {
-        const vecData = await vecResult.value.json()
-        setVectors(vecData.vectors || [])
-      }
-
+      if (!vecRes.ok || !jobsRes.ok) throw new Error('Fetch failed')
+      const vecData  = await vecRes.json()
+      const jobsData = await jobsRes.json()
+      setVectors(vecData.vectors || [])
       const active = new Set<string>()
-      if (jobsResult.status === 'fulfilled' && jobsResult.value.ok) {
-        const jobsData = await jobsResult.value.json()
-        for (const job of (jobsData.jobs || []) as Job[]) {
-          if (job.status === 'queued' || job.status === 'running') {
-            const vid = job.input_ref?.vector_id as string | undefined
-            if (vid) active.add(vid)
-          }
+      for (const job of (jobsData.jobs || []) as Job[]) {
+        if (job.status === 'queued' || job.status === 'running') {
+          const vid = job.input_ref?.vector_id as string | undefined
+          if (vid) active.add(vid)
         }
       }
       setActiveVectorIds(active)
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return
-      console.error('fetchData failed', e)
+      console.error('fetchData failed:', e)
     } finally {
       setLoading(false)
     }
-  }, [user, isLoaded, API])
+  }, [user, isLoaded, API]) // ← solo dependencias estables
 
   useEffect(() => {
-    if (!isLoaded || !user) return
-    const controller = new AbortController()
-    fetchData(controller.signal)
-    const interval = setInterval(() => fetchData(controller.signal), 5000)
-    return () => { controller.abort(); clearInterval(interval) }
-  }, [user, isLoaded, fetchData])
+    if (isLoaded && user) fetchData()
+  }, [isLoaded, user, fetchData])
+
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!isLoaded || !user) { setLoading(false); return }
+    if (!isLoaded || !user) return
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
@@ -100,6 +95,7 @@ export default function VectorsPage() {
           file_type: 'vector', filesize: item.file.size,
         }),
       })
+      if (!res.ok) throw new Error('Failed to get signed URL')
       const { url, gcs_path } = await res.json()
       updateItem({ message: 'Uploading...' })
       await new Promise<void>((resolve, reject) => {
@@ -148,9 +144,7 @@ export default function VectorsPage() {
       })
       setShowTransform(false); setSelectedId(null); setNewEpsg('')
       await fetchData()
-    } finally {
-      setTransforming(false)
-    }
+    } finally { setTransforming(false) }
   }
 
   async function handleDelete() {
@@ -160,11 +154,15 @@ export default function VectorsPage() {
       await fetch(`${API}/vectors/${deletingId}?clerk_id=${user.id}`, { method: 'DELETE' })
       setShowDeleteConfirm(false); setDeletingId(null)
       await fetchData()
-    } catch (err) {
-      console.error('Delete failed', err)
-    } finally {
-      setIsDeleting(false)
-    }
+    } catch (err) { console.error('Delete failed:', err) }
+    finally { setIsDeleting(false) }
+  }
+
+  async function handleDownload(vectorId: string) {
+    if (!user) return
+    const res = await fetch(`${API}/vectors/${vectorId}/download?clerk_id=${user.id}`)
+    const data = await res.json()
+    if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
   function formatSize(bytes: number | null) {
@@ -176,15 +174,7 @@ export default function VectorsPage() {
 
   function formatDate(iso: string | null) {
     if (!iso) return '—'
-    const d = new Date(iso)
-    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  }
-
-  async function handleDownload(vectorId: string) {
-    if (!user) return
-    const res = await fetch(`${API}/vectors/${vectorId}/download?clerk_id=${user.id}`)
-    const data = await res.json()
-    if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
+    return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   }
 
   const statusColor: Record<string, string> = {
@@ -194,7 +184,6 @@ export default function VectorsPage() {
   const uploadColor: Record<string, string> = {
     waiting: 'bg-gray-100', uploading: 'bg-[#2C5F45]', done: 'bg-green-500', error: 'bg-red-400',
   }
-
   const deletingFilename = vectors.find(v => v.id === deletingId)?.filename
 
   return (
@@ -245,6 +234,7 @@ export default function VectorsPage() {
         </div>
       )}
 
+      {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
@@ -271,6 +261,7 @@ export default function VectorsPage() {
         </div>
       )}
 
+      {/* Delete modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">

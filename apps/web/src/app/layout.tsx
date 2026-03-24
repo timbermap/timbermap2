@@ -20,8 +20,15 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider>
-      <html lang="en" className={inter.variable}>
+    <ClerkProvider 
+      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      appearance={{
+        layout: { 
+          unsafe_disableDevelopmentModeWarnings: true 
+        }
+      }}
+    >
+      <html lang="es" className={inter.variable}>
         <body>{children}</body>
       </html>
     </ClerkProvider>

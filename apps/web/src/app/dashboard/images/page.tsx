@@ -53,49 +53,44 @@ export default function ImagesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || "https://timbermap-api-788407107542.us-central1.run.app"
 
-  const fetchData = useCallback(async (signal?: AbortSignal) => {
-    if (!isLoaded) return
-    if (!user) { setLoading(false); return }
+  // ── fetchData sin dependencias de estado que causen loop ──────────────────
+  const fetchData = useCallback(async () => {
+    if (!isLoaded || !user) { setLoading(false); return }
     try {
-      const [imgResult, jobsResult] = await Promise.allSettled([
-        fetch(`${API}/images/${user.id}`, { signal }),
-        fetch(`${API}/jobs/${user.id}`,   { signal }),
+      const [imgRes, jobsRes] = await Promise.all([
+        fetch(`${API}/images/${user.id}`),
+        fetch(`${API}/jobs/${user.id}`),
       ])
-
-      if (imgResult.status === 'fulfilled' && imgResult.value.ok) {
-        const imgData = await imgResult.value.json()
-        setImages(imgData.images || [])
-      }
-
+      if (!imgRes.ok || !jobsRes.ok) throw new Error('Fetch failed')
+      const imgData  = await imgRes.json()
+      const jobsData = await jobsRes.json()
+      setImages(imgData.images || [])
       const active = new Set<string>()
-      if (jobsResult.status === 'fulfilled' && jobsResult.value.ok) {
-        const jobsData = await jobsResult.value.json()
-        for (const job of (jobsData.jobs || []) as Job[]) {
-          if (job.status === 'queued' || job.status === 'running') {
-            const iid = job.input_ref?.image_id as string | undefined
-            if (iid) active.add(iid)
-          }
+      for (const job of (jobsData.jobs || []) as Job[]) {
+        if (job.status === 'queued' || job.status === 'running') {
+          const iid = job.input_ref?.image_id as string | undefined
+          if (iid) active.add(iid)
         }
       }
       setActiveImageIds(active)
     } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return
-      console.error('fetchData failed', e)
+      console.error('fetchData failed:', e)
     } finally {
       setLoading(false)
     }
-  }, [user, isLoaded, API])
+  }, [user, isLoaded, API]) // ← solo las dependencias estables
 
   useEffect(() => {
-    if (!isLoaded || !user) return
-    const controller = new AbortController()
-    fetchData(controller.signal)
-    const interval = setInterval(() => fetchData(controller.signal), 5000)
-    return () => { controller.abort(); clearInterval(interval) }
-  }, [user, isLoaded, fetchData])
+    if (isLoaded && user) fetchData()
+  }, [isLoaded, user, fetchData])
+
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   async function uploadSingle(item: UploadItem, index: number) {
-    if (!isLoaded || !user) { setLoading(false); return }
+    if (!isLoaded || !user) return
     const updateItem = (patch: Partial<UploadItem>) =>
       setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...patch } : u))
     updateItem({ status: 'uploading', message: 'Getting upload URL...' })
@@ -109,6 +104,7 @@ export default function ImagesPage() {
           file_type: 'raster', filesize: item.file.size,
         }),
       })
+      if (!res.ok) throw new Error('Failed to get signed URL')
       const { url, gcs_path } = await res.json()
       updateItem({ message: 'Uploading...' })
       await new Promise<void>((resolve, reject) => {
@@ -160,13 +156,10 @@ export default function ImagesPage() {
           new_resolution_y: transform.new_resolution_y ? parseFloat(transform.new_resolution_y) : null,
         }),
       })
-      setShowTransform(false)
-      setSelectedId(null)
+      setShowTransform(false); setSelectedId(null)
       setTransform({ new_epsg: '', new_resolution_x: '', new_resolution_y: '' })
       await fetchData()
-    } finally {
-      setTransforming(false)
-    }
+    } finally { setTransforming(false) }
   }
 
   async function handleDelete() {
@@ -174,41 +167,10 @@ export default function ImagesPage() {
     setIsDeleting(true)
     try {
       await fetch(`${API}/images/${deletingId}?clerk_id=${user.id}`, { method: 'DELETE' })
-      setShowDeleteConfirm(false)
-      setDeletingId(null)
+      setShowDeleteConfirm(false); setDeletingId(null)
       await fetchData()
-    } catch (err) {
-      console.error('Delete failed', err)
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-
-
-
-  function formatSize(bytes: number | null) {
-    if (!bytes) return '—'
-    if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
-    if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + ' MB'
-    return (bytes / 1e3).toFixed(0) + ' KB'
-  }
-
-  function formatDate(iso: string | null) {
-    if (!iso) return '—'
-    const d = new Date(iso)
-    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  }
-
-  function formatGSD(pixelSize: number | null, epsg: string | null) {
-    if (!pixelSize) return '—'
-    let meters = pixelSize
-    // If EPSG:4326, pixel size is in degrees → convert to meters
-    if (epsg === '4326' || epsg === 'EPSG:4326') {
-      meters = pixelSize * 111320
-    }
-    if (meters < 1) return (meters * 100).toFixed(1) + ' cm'
-    return meters.toFixed(2) + ' m'
+    } catch (err) { console.error('Delete failed:', err) }
+    finally { setIsDeleting(false) }
   }
 
   async function handleDownload(imageId: string) {
@@ -218,6 +180,26 @@ export default function ImagesPage() {
     if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
+  function formatSize(bytes: number | null) {
+    if (!bytes) return '—'
+    if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
+    if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + ' MB'
+    return (bytes / 1e3).toFixed(0) + ' KB'
+  }
+
+  function formatGSD(pixelSize: number | null, epsg: string | null) {
+    if (!pixelSize) return '—'
+    let meters = pixelSize
+    if (epsg === '4326' || epsg === 'EPSG:4326') meters = pixelSize * 111320
+    if (meters < 1) return (meters * 100).toFixed(1) + ' cm'
+    return meters.toFixed(2) + ' m'
+  }
+
+  function formatDate(iso: string | null) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+
   const statusColor: Record<string, string> = {
     uploaded: 'bg-blue-50 text-blue-700', processing: 'bg-yellow-50 text-yellow-700',
     ready: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
@@ -225,7 +207,6 @@ export default function ImagesPage() {
   const uploadColor: Record<string, string> = {
     waiting: 'bg-gray-100', uploading: 'bg-[#2C5F45]', done: 'bg-green-500', error: 'bg-red-400',
   }
-
   const deletingFilename = images.find(i => i.id === deletingId)?.filename
 
   return (
@@ -240,7 +221,7 @@ export default function ImagesPage() {
           className="bg-[#2C5F45] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#3D7A5A] transition-colors">
           + Upload images
         </button>
-        <input ref={fileRef} type="file" accept=".tif,.tiff" multiple className="hidden" onChange={handleFiles} />
+        <input ref={fileRef} type="file" accept=".tif,.tiff,.geotiff" multiple className="hidden" onChange={handleFiles} />
       </div>
 
       {uploads.length > 0 && (
@@ -270,27 +251,27 @@ export default function ImagesPage() {
       {/* Transform modal */}
       {showTransform && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Transform image</h2>
-            <p className="text-sm text-gray-400 mb-5">Leave fields blank to keep existing values</p>
-            <div className="space-y-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Reproject image</h2>
+            <p className="text-sm text-gray-400 mb-5">Set the target coordinate system and resolution</p>
+            <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Reproject to EPSG</label>
+                <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Target EPSG</label>
                 <input type="text" placeholder="e.g. 4326 or 32718"
-                  value={transform.new_epsg} onChange={e => setTransform(t => ({...t, new_epsg: e.target.value}))}
+                  value={transform.new_epsg} onChange={e => setTransform({ ...transform, new_epsg: e.target.value })}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution X (m)</label>
-                  <input type="number" placeholder="e.g. 0.5" value={transform.new_resolution_x}
-                    onChange={e => setTransform(t => ({...t, new_resolution_x: e.target.value}))}
+                  <input type="text" placeholder="optional"
+                    value={transform.new_resolution_x} onChange={e => setTransform({ ...transform, new_resolution_x: e.target.value })}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
                 <div>
                   <label className="text-xs font-medium tracking-widest uppercase text-gray-400 block mb-1.5">Resolution Y (m)</label>
-                  <input type="number" placeholder="e.g. 0.5" value={transform.new_resolution_y}
-                    onChange={e => setTransform(t => ({...t, new_resolution_y: e.target.value}))}
+                  <input type="text" placeholder="optional"
+                    value={transform.new_resolution_y} onChange={e => setTransform({ ...transform, new_resolution_y: e.target.value })}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#2C5F45]" />
                 </div>
               </div>
@@ -309,7 +290,7 @@ export default function ImagesPage() {
         </div>
       )}
 
-      {/* Delete confirm modal */}
+      {/* Delete modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
@@ -339,8 +320,8 @@ export default function ImagesPage() {
           <div className="w-10 h-10 rounded-full bg-[#EDF4F0] flex items-center justify-center mx-auto mb-3">
             <span className="text-[#2C5F45] text-lg">+</span>
           </div>
-          <p className="text-gray-500 text-sm font-medium">Click to upload images</p>
-          <p className="text-gray-300 text-xs mt-1">GeoTIFF files up to 5GB · multiple files supported</p>
+          <p className="text-gray-500 text-sm font-medium">Click to upload raster images</p>
+          <p className="text-gray-300 text-xs mt-1">Supports .tif, .tiff, .geotiff</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -369,7 +350,7 @@ export default function ImagesPage() {
                     <td className="px-5 py-3.5 text-gray-500">{formatGSD(img.pixel_size_x, img.epsg)}</td>
                     <td className="px-5 py-3.5 text-gray-500">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
                     <td className="px-5 py-3.5 text-gray-500">{formatSize(img.filesize)}</td>
-                    <td className="px-5 py-3.5 text-gray-500">{formatDate(img.created_at)}</td>
+                    <td className="px-5 py-3.5 text-gray-400 text-xs">{formatDate(img.created_at)}</td>
                     <td className="px-5 py-3.5">
                       {isActive ? (
                         <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
