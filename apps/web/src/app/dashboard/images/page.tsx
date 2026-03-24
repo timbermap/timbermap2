@@ -312,7 +312,7 @@ export default function ImagesPage() {
         </div>
       )}
 
-      {loading ? (
+      {!isLoaded || loading ? (
         <Spinner text="Loading images..." />
       ) : images.length === 0 && uploads.length === 0 ? (
         <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-16 text-center cursor-pointer hover:border-[#5A9E7C] transition-colors"
