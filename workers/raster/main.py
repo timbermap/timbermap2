@@ -357,16 +357,16 @@ async def transform_raster(job: TransformJob):
             convert_to_cog(warped_path, cog_path)
             upload_to_gcs(cog_path, f"users/cogs/{job.image_id}.tif")
 
-            meta = extract_metadata(cog_path)
-            bbox = meta.get("bbox", {})
+            meta_cog = extract_metadata(cog_path)
+            bbox = meta_cog.get("bbox", {})
             update_image(
                 job.image_id,
                 status="ready",
                 epsg=meta_warped["epsg"],
-                num_bands=meta["num_bands"],
-                pixel_size_x=meta["pixel_size_x"],
-                pixel_size_y=meta["pixel_size_y"],
-                area_ha=meta["area_ha"],
+                num_bands=meta_cog["num_bands"],
+                pixel_size_x=meta_warped["pixel_size_x"],
+                pixel_size_y=meta_warped["pixel_size_y"],
+                area_ha=meta_warped["area_ha"],
                 geoserver_layer=None,
                 bbox_minx=bbox.get("minx"),
                 bbox_miny=bbox.get("miny"),
@@ -378,7 +378,7 @@ async def transform_raster(job: TransformJob):
                   (f" @ {job.target_resolution_m}m" if job.target_resolution_m else "")
             update_job(job.job_id, "done", msg)
             publish_status(job.job_id, "done", msg)
-            return {"status": "done", "meta": meta}
+            return {"status": "done", "meta": meta_warped}
 
         except Exception as e:
             update_job(job.job_id, "failed", str(e))
