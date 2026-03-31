@@ -17,9 +17,12 @@ dependencies = [
     "python-dotenv (>=1.2.2,<2.0.0)",
     "rasterio (>=1.5.0,<2.0.0)",
     "numpy (>=2.4.3,<3.0.0)",
-    "pillow (>=12.1.1,<13.0.0)"
+    "pillow (>=12.1.1,<13.0.0)",
+    "scipy (>=1.15.0,<2.0.0)",
+    "fiona (>=1.9.0,<2.0.0)",
+    "shapely (>=2.0.0,<3.0.0)",
+    "pyproj (>=3.6.0,<4.0.0)"
 ]
-
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
