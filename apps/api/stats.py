@@ -40,12 +40,12 @@ def fetch_stats(clerk_id: str) -> dict:
     conn = get_conn()
     cur  = conn.cursor()
 
-    # Get internal owner_id from clerk_id
     cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
     row = cur.fetchone()
     if not row:
         cur.close(); conn.close()
-        return {"images": 0, "vectors": 0, "jobs": 0, "jobs_running": 0, "jobs_failed": 0, "models": 0}
+        return {"images": 0, "vectors": 0, "jobs": 0,
+                "jobs_running": 0, "jobs_failed": 0, "models": 0}
 
     owner_id = row["id"]
 
@@ -67,15 +67,16 @@ def fetch_stats(clerk_id: str) -> dict:
     )
     jobs_row = cur.fetchone()
 
+    # Count models user has permission to run
     try:
         cur.execute(
             """
             SELECT COUNT(DISTINCT m.id) AS n
             FROM models m
-            LEFT JOIN user_model_permissions p ON p.model_id = m.id
-            WHERE m.owner_clerk_id = %s OR p.clerk_id = %s
+            JOIN user_model_permissions p ON p.model_id = m.id
+            WHERE p.user_id = %s AND m.is_active = true
             """,
-            (clerk_id, clerk_id),
+            (owner_id,),
         )
         model_count = cur.fetchone()["n"]
     except Exception:

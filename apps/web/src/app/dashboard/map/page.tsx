@@ -31,6 +31,9 @@ type MLOutput = {
   geojson_url?: string
   epsg: number | null
   bbox: [number, number, number, number] | null
+  opacity: number
+  visible: boolean
+  image_id?: string | null
 }
 
 type AOIFeature = {
@@ -235,6 +238,8 @@ export default function MapPage() {
   const [mlOutputs, setMlOutputs] = useState<MLOutput[]>([])
   const [basemap,   setBasemap]   = useState('satellite')
   const [mapReady,  setMapReady]  = useState(false)
+  const [layersLoading, setLayersLoading] = useState(false)
+  const [clientReady, setClientReady] = useState(false)
   const [drawMode,  setDrawMode]  = useState(false)
   const [aoi,       setAoi]       = useState<AOIFeature | null>(null)
   const [fetchErr,  setFetchErr]  = useState(false)
@@ -244,17 +249,27 @@ export default function MapPage() {
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
 
-  // ── Load ML outputs from localStorage ────────────────────────────────────
+  // ── Load ML outputs — only when navigating from jobs "View on map" ────────
   useEffect(() => {
-    function loadOutputs() {
+    setClientReady(true)
+    setLayersLoading(true)
+    // Check if we arrived here via "View on map" button (flag set by jobs page)
+    const fromJobs = sessionStorage.getItem('ml_outputs_pending') === '1'
+    if (fromJobs) {
+      sessionStorage.removeItem('ml_outputs_pending')
       try {
-        const stored = JSON.parse(localStorage.getItem('ml_outputs') || '[]')
-        setMlOutputs(stored)
+        const stored = JSON.parse(sessionStorage.getItem('ml_outputs') || '[]')
+        setMlOutputs(stored.map((o: MLOutput) => ({
+          ...o,
+          opacity: o.opacity ?? 0.85,
+          visible: o.visible ?? true,
+        })))
       } catch {}
+    } else {
+      // Navigated here normally — clear any stale results
+      sessionStorage.removeItem('ml_outputs')
+      setMlOutputs([])
     }
-    loadOutputs()
-    window.addEventListener('storage', loadOutputs)
-    return () => window.removeEventListener('storage', loadOutputs)
   }, [])
 
   const fetchLayers = useCallback(async (retrying = false) => {
@@ -277,6 +292,7 @@ export default function MapPage() {
         }))
       })
     } catch { setFetchErr(true) }
+    finally { setLayersLoading(false) }
   }, [user, isLoaded, API])
 
   useEffect(() => { if (isLoaded && user) fetchLayers() }, [user, isLoaded, fetchLayers])
@@ -321,12 +337,22 @@ export default function MapPage() {
     })
     map.current.on('draw.delete', () => { setAoi(null); setDrawMode(false); setAoiSaved(false) })
     map.current.on('load', () => setMapReady(true))
-    return () => { maplibregl.removeProtocol('cog'); map.current?.remove(); map.current = null }
+    return () => {
+      maplibregl.removeProtocol('cog')
+      map.current?.remove()
+      map.current = null
+      // Clear results when leaving map — next "View on map" starts fresh
+      sessionStorage.removeItem('ml_outputs')
+      sessionStorage.removeItem('ml_outputs_pending')
+    }
   }, [])
 
   // ── Render regular layers ─────────────────────────────────────────────────
   useEffect(() => {
     if (!map.current || !mapReady) return
+    // Find first ML layer to use as beforeId — keeps images below results
+    const firstMLLayerId = mlOutputs.length > 0 ? `ml-layer-${mlOutputs[0].id}` : undefined
+    const beforeId = firstMLLayerId && map.current.getLayer(firstMLLayerId) ? firstMLLayerId : undefined
     layers.forEach((layer, idx) => {
       const sourceId   = `source-${layer.id}`
       const layerId    = `layer-${layer.id}`
@@ -335,7 +361,7 @@ export default function MapPage() {
         if (!map.current!.getSource(sourceId)) {
           map.current!.addSource(sourceId, { type: 'raster', url: `cog://${layer.cog_url}`, tileSize: 256 })
           map.current!.addLayer({ id: layerId, type: 'raster', source: sourceId,
-            paint: { 'raster-opacity': layer.opacity }, layout: { visibility } })
+            paint: { 'raster-opacity': layer.opacity }, layout: { visibility } }, beforeId)
         } else {
           map.current!.setLayoutProperty(layerId, 'visibility', visibility)
           map.current!.setPaintProperty(layerId, 'raster-opacity', layer.opacity)
@@ -347,9 +373,9 @@ export default function MapPage() {
         if (!map.current!.getSource(sourceId)) {
           map.current!.addSource(sourceId, { type: 'vector', tiles: [layer.tiles_url], minzoom: 0, maxzoom: 14 })
           map.current!.addLayer({ id: fillId, type: 'fill', source: sourceId, 'source-layer': 'layer',
-            paint: { 'fill-color': color, 'fill-opacity': layer.opacity * 0.35 }, layout: { visibility } })
+            paint: { 'fill-color': color, 'fill-opacity': layer.opacity * 0.35 }, layout: { visibility } }, beforeId)
           map.current!.addLayer({ id: strokeId, type: 'line', source: sourceId, 'source-layer': 'layer',
-            paint: { 'line-color': color, 'line-width': 1.5, 'line-opacity': layer.opacity }, layout: { visibility } })
+            paint: { 'line-color': color, 'line-width': 1.5, 'line-opacity': layer.opacity }, layout: { visibility } }, beforeId)
         } else {
           map.current!.setLayoutProperty(fillId, 'visibility', visibility)
           map.current!.setLayoutProperty(strokeId, 'visibility', visibility)
@@ -358,7 +384,7 @@ export default function MapPage() {
         }
       }
     })
-  }, [layers, mapReady])
+  }, [layers, mapReady, mlOutputs])
 
   // ── Render ML output layers ───────────────────────────────────────────────
   useEffect(() => {
@@ -367,113 +393,134 @@ export default function MapPage() {
     mlOutputs.forEach((output, idx) => {
       const sourceId = `ml-source-${output.id}`
       const layerId  = `ml-layer-${output.id}`
+      const visibility = output.visible !== false ? 'visible' : 'none'
+      const opacity = output.opacity ?? 0.85
 
       if (output.type === 'raster' && output.cog_url) {
         if (!map.current!.getSource(sourceId)) {
-          map.current!.addSource(sourceId, {
-            type: 'raster',
-            url: `cog://${output.cog_url}`,
-            tileSize: 256,
-          })
-          map.current!.addLayer({
-            id: layerId, type: 'raster', source: sourceId,
-            paint: { 'raster-opacity': 0.85 },
-          })
+          map.current!.addSource(sourceId, { type: 'raster', url: `cog://${output.cog_url}`, tileSize: 256 })
+          map.current!.addLayer({ id: layerId, type: 'raster', source: sourceId,
+            paint: { 'raster-opacity': opacity }, layout: { visibility } })
+        } else {
+          map.current!.setPaintProperty(layerId, 'raster-opacity', opacity)
+          map.current!.setLayoutProperty(layerId, 'visibility', visibility)
         }
       }
 
       if (output.type === 'vector' && output.geojson_url) {
-        if (!map.current!.getSource(sourceId)) {
-          fetch(output.geojson_url, { mode: 'cors' })
-            .then(r => {
-              if (!r.ok) throw new Error(`HTTP ${r.status}`)
-              return r.json()
-            })
-            .then(async geojson => {
-              if (!map.current || map.current.getSource(sourceId)) return
-
-              // Reproject to 4326 if needed (outputs are in raster native EPSG)
-              const outputEpsg = output.epsg
-              if (outputEpsg && outputEpsg !== 4326) {
-                try {
-                  const proj4 = (await import('proj4')).default
-                  const fromCRS = `EPSG:${outputEpsg}`
-                  // Register the CRS if not already known
-                  if (!proj4.defs(fromCRS)) {
-                    const res = await fetch(`https://epsg.io/${outputEpsg}.proj4`)
-                    const def = await res.text()
-                    proj4.defs(fromCRS, def)
-                  }
-                  const transformer = proj4(fromCRS, 'EPSG:4326')
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  geojson = {
-                    ...geojson,
-                    features: geojson.features.map((feat: any) => {
-                      if (!feat.geometry) return feat
-                      const geom = feat.geometry
-                      if (geom.type === 'Point') {
-                        const [x, y] = transformer.forward(geom.coordinates as [number, number])
-                        return { ...feat, geometry: { ...geom, coordinates: [x, y] } }
-                      }
-                      if (geom.type === 'MultiPoint' || geom.type === 'LineString') {
-                        const coords = (geom.coordinates as [number, number][]).map((c: [number, number]) => transformer.forward(c))
-                        return { ...feat, geometry: { ...geom, coordinates: coords } }
-                      }
-                      if (geom.type === 'Polygon' || geom.type === 'MultiLineString') {
-                        const coords = (geom.coordinates as [number, number][][]).map((ring: [number, number][]) =>
-                          ring.map((c: [number, number]) => transformer.forward(c))
-                        )
-                        return { ...feat, geometry: { ...geom, coordinates: coords } }
-                      }
-                      return feat
-                    })
-                  }
-                } catch (err) {
-                  console.warn('Reprojection failed, rendering as-is:', err)
-                }
-              }
-
-              map.current.addSource(sourceId, { type: 'geojson', data: geojson })
-              const color = VECTOR_COLORS[(idx + 10) % VECTOR_COLORS.length]
-              const geomType = geojson.features?.[0]?.geometry?.type || ''
-              if (geomType === 'Point' || geomType === 'MultiPoint') {
-                map.current.addLayer({
-                  id: `${layerId}-circle`, type: 'circle', source: sourceId,
-                  paint: {
-                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2, 16, 5],
-                    'circle-color': color,
-                    'circle-opacity': 0.85,
-                    'circle-stroke-width': 0.5,
-                    'circle-stroke-color': '#fff',
-                  }
-                })
-              } else {
-                map.current.addLayer({
-                  id: `${layerId}-fill`, type: 'fill', source: sourceId,
-                  paint: { 'fill-color': color, 'fill-opacity': 0.3 }
-                })
-                map.current.addLayer({
-                  id: `${layerId}-line`, type: 'line', source: sourceId,
-                  paint: { 'line-color': color, 'line-width': 1.5 }
-                })
-              }
-              if (output.bbox) {
-                map.current.fitBounds(
-                  [[output.bbox[0], output.bbox[1]], [output.bbox[2], output.bbox[3]]],
-                  { padding: 60, duration: 900, maxZoom: 18 }
-                )
-              }
-            })
-            .catch(err => console.error('GeoJSON load failed:', err))
+        // Update existing vector layers (toggle/opacity)
+        const circleId = `${layerId}-circle`
+        const fillId   = `${layerId}-fill`
+        const lineId   = `${layerId}-line`
+        if (map.current!.getSource(sourceId)) {
+          // Already added — just update visibility and opacity
+          if (map.current!.getLayer(circleId)) {
+            map.current!.setLayoutProperty(circleId, 'visibility', visibility)
+            map.current!.setPaintProperty(circleId, 'circle-opacity', opacity)
+            map.current!.setPaintProperty(circleId, 'circle-stroke-opacity', opacity)
+          }
+          if (map.current!.getLayer(fillId)) {
+            map.current!.setLayoutProperty(fillId, 'visibility', visibility)
+            map.current!.setPaintProperty(fillId, 'fill-opacity', opacity * 0.35)
+          }
+          if (map.current!.getLayer(lineId)) {
+            map.current!.setLayoutProperty(lineId, 'visibility', visibility)
+            map.current!.setPaintProperty(lineId, 'line-opacity', opacity)
+          }
+          return
         }
+        // First time — fetch and add
+        fetch(output.geojson_url, { mode: 'cors' })
+          .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`)
+            return r.json()
+          })
+          .then(async geojson => {
+            if (!map.current || map.current.getSource(sourceId)) return
+
+            const outputEpsg = output.epsg
+            if (outputEpsg && outputEpsg !== 4326) {
+              try {
+                const proj4 = (await import('proj4')).default
+                const fromCRS = `EPSG:${outputEpsg}`
+                if (!proj4.defs(fromCRS)) {
+                  const res = await fetch(`https://epsg.io/${outputEpsg}.proj4`)
+                  const def = await res.text()
+                  proj4.defs(fromCRS, def)
+                }
+                const transformer = proj4(fromCRS, 'EPSG:4326')
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                geojson = {
+                  ...geojson,
+                  features: geojson.features.map((feat: any) => {
+                    if (!feat.geometry) return feat
+                    const geom = feat.geometry
+                    if (geom.type === 'Point') {
+                      const [x, y] = transformer.forward(geom.coordinates as [number, number])
+                      return { ...feat, geometry: { ...geom, coordinates: [x, y] } }
+                    }
+                    if (geom.type === 'MultiPoint' || geom.type === 'LineString') {
+                      const coords = (geom.coordinates as [number, number][]).map((c: [number, number]) => transformer.forward(c))
+                      return { ...feat, geometry: { ...geom, coordinates: coords } }
+                    }
+                    if (geom.type === 'Polygon' || geom.type === 'MultiLineString') {
+                      const coords = (geom.coordinates as [number, number][][]).map((ring: [number, number][]) =>
+                        ring.map((c: [number, number]) => transformer.forward(c))
+                      )
+                      return { ...feat, geometry: { ...geom, coordinates: coords } }
+                    }
+                    return feat
+                  })
+                }
+              } catch (err) {
+                console.warn('Reprojection failed, rendering as-is:', err)
+              }
+            }
+
+            map.current.addSource(sourceId, { type: 'geojson', data: geojson })
+            const color = VECTOR_COLORS[(idx + 10) % VECTOR_COLORS.length]
+            const geomType = geojson.features?.[0]?.geometry?.type || ''
+            if (geomType === 'Point' || geomType === 'MultiPoint') {
+              map.current.addLayer({
+                id: circleId, type: 'circle', source: sourceId,
+                paint: {
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2, 16, 5],
+                  'circle-color': color,
+                  'circle-opacity': opacity,
+                  'circle-stroke-width': 0.5,
+                  'circle-stroke-color': '#fff',
+                  'circle-stroke-opacity': opacity,
+                },
+                layout: { visibility },
+              })
+            } else {
+              map.current.addLayer({
+                id: fillId, type: 'fill', source: sourceId,
+                paint: { 'fill-color': color, 'fill-opacity': opacity * 0.35 },
+                layout: { visibility },
+              })
+              map.current.addLayer({
+                id: lineId, type: 'line', source: sourceId,
+                paint: { 'line-color': color, 'line-width': 1.5, 'line-opacity': opacity },
+                layout: { visibility },
+              })
+            }
+            if (output.bbox) {
+              map.current.fitBounds(
+                [[output.bbox[0], output.bbox[1]], [output.bbox[2], output.bbox[3]]],
+                { padding: 60, duration: 900, maxZoom: 18 }
+              )
+            }
+          })
+          .catch(err => console.error('GeoJSON load failed:', err))
       }
     })
   }, [mlOutputs, mapReady])
 
   function removeMLOutput(outputId: string) {
-    const stored = JSON.parse(localStorage.getItem('ml_outputs') || '[]')
+    const stored = JSON.parse(sessionStorage.getItem('ml_outputs') || '[]')
     const filtered = stored.filter((e: { id: string }) => e.id !== outputId)
-    localStorage.setItem('ml_outputs', JSON.stringify(filtered))
+    sessionStorage.setItem('ml_outputs', JSON.stringify(filtered))
     setMlOutputs(filtered)
     if (map.current) {
       const sourceId = `ml-source-${outputId}`
@@ -492,6 +539,29 @@ export default function MapPage() {
 
   function toggleLayer(id: string) { setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l)) }
   function setOpacity(id: string, opacity: number) { setLayers(prev => prev.map(l => l.id === id ? { ...l, opacity } : l)) }
+
+  function toggleMLOutput(id: string) {
+    setMlOutputs(prev => prev.map(o => o.id === id ? { ...o, visible: !o.visible } : o))
+  }
+  function setMLOpacity(id: string, opacity: number) {
+    setMlOutputs(prev => prev.map(o => o.id === id ? { ...o, opacity } : o))
+  }
+
+  function zoomToMLOutput(output: MLOutput) {
+    if (!map.current) return
+    // Use real bbox if available (not the [0,0,0,0] placeholder)
+    if (output.bbox && (output.bbox[0] !== 0 || output.bbox[1] !== 0 || output.bbox[2] !== 0)) {
+      map.current.fitBounds([[output.bbox[0], output.bbox[1]], [output.bbox[2], output.bbox[3]]], { padding: 60, duration: 900, maxZoom: 18 })
+      return
+    }
+    // Fallback: zoom to associated image bbox
+    if (output.image_id) {
+      const imgLayer = layers.find(l => l.id === output.image_id)
+      if (imgLayer?.bbox) {
+        map.current.fitBounds([[imgLayer.bbox[0], imgLayer.bbox[1]], [imgLayer.bbox[2], imgLayer.bbox[3]]], { padding: 60, duration: 900, maxZoom: 18 })
+      }
+    }
+  }
 
   function changeBasemap(id: string) {
     setBasemap(id)
@@ -552,7 +622,16 @@ export default function MapPage() {
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" suppressHydrationWarning>
+
+          {/* Sidebar loading spinner — shown until layers load */}
+          {clientReady && layersLoading ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <div className="w-5 h-5 border-2 border-white/10 border-t-[#6AA8A0] animate-spin" style={{ borderRadius: 99 }} />
+              <span className="text-xs text-white/30 tracking-widest uppercase">Loading layers</span>
+            </div>
+          ) : (
+            <>
 
           {/* Basemap */}
           <Accordion title="Basemap"
@@ -571,6 +650,39 @@ export default function MapPage() {
               ))}
             </div>
           </Accordion>
+
+          {/* ML Results — top */}
+          {mlOutputs.length > 0 && (
+            <Accordion title="Results"
+              icon={<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
+              badge={mlOutputs.length}
+              defaultOpen={true}>
+              <div className="pb-1">
+                {mlOutputs.map((output, idx) => {
+                  // Use output bbox or mark as zoomable anyway (zoomToMLOutput handles fallback)
+                  const hasBbox = !!(output.bbox || output.image_id)
+                  const asLayer: Layer = {
+                    id: output.id,
+                    name: output.name,
+                    type: output.type === 'vector' ? 'vector' : 'raster',
+                    epsg: output.epsg ? String(output.epsg) : null,
+                    visible: output.visible !== false,
+                    opacity: output.opacity ?? 0.85,
+                    bbox: output.bbox ?? (hasBbox ? [0,0,0,0] : null),
+                  }
+                  return (
+                    <LayerRow key={output.id}
+                      layer={asLayer}
+                      colorDot={VECTOR_COLORS[(idx + 10) % VECTOR_COLORS.length]}
+                      onToggle={() => toggleMLOutput(output.id)}
+                      onZoomTo={() => zoomToMLOutput(output)}
+                      onOpacityChange={setMLOpacity}
+                    />
+                  )
+                })}
+              </div>
+            </Accordion>
+          )}
 
           {/* Images */}
           <Accordion title="Images"
@@ -608,48 +720,6 @@ export default function MapPage() {
               </div>
             )}
           </Accordion>
-
-          {/* ML Results */}
-          {mlOutputs.length > 0 && (
-            <Accordion title="Results"
-              icon={<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
-              badge={mlOutputs.length}
-              defaultOpen={true}>
-              <div className="pb-1">
-                {mlOutputs.map((output, idx) => (
-                  <div key={output.id}
-                    className="relative group flex items-center gap-2.5 pl-8 pr-3 py-2 hover:bg-white/5 transition-colors">
-                    <div className="w-2 h-2 flex-shrink-0"
-                      style={{ borderRadius: 99, backgroundColor: VECTOR_COLORS[(idx + 10) % VECTOR_COLORS.length] }} />
-                    <div className="flex-1 min-w-0 cursor-pointer"
-                      onClick={() => {
-                        if (!output.bbox || !map.current) return
-                        map.current.fitBounds(
-                          [[output.bbox[0], output.bbox[1]], [output.bbox[2], output.bbox[3]]],
-                          { padding: 60, duration: 900, maxZoom: 18 }
-                        )
-                      }}>
-                      <p className="text-xs font-medium text-white/75 truncate hover:text-[#6AA8A0] transition-colors">
-                        {output.name}
-                      </p>
-                      <p className="text-xs text-white/20 font-mono">
-                        {output.type} · EPSG:{output.epsg || '—'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => removeMLOutput(output.id)}
-                      className="flex items-center justify-center w-5 h-5 text-white/20 hover:text-red-400 hover:bg-white/10 transition-all flex-shrink-0"
-                      style={{ borderRadius: 4 }}
-                      title="Remove layer">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </Accordion>
-          )}
 
           {/* AOI */}
           <Accordion title="Area of Interest"
@@ -735,6 +805,8 @@ export default function MapPage() {
               )}
             </div>
           </Accordion>
+        </>
+        )}
         </div>
 
         {/* Footer */}

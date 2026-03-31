@@ -9,3 +9,4 @@ service-account.json
 apps/api/.env
 maquina.txt
 clean_geoserver.py
+*.docx

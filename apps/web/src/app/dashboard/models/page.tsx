@@ -135,8 +135,19 @@ export default function ModelsPage() {
 
   if (!isLoaded || loading) return (
     <div className="w-full">
-      <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">AI Models</p>
-      <h1 className="text-2xl font-semibold text-[#1C1C1C] mb-6">Models</h1>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">AI Models</p>
+          <h1 className="text-2xl font-semibold text-[#1C1C1C]">Models</h1>
+        </div>
+        <a href="/dashboard/catalog"
+          className="flex items-center gap-2 bg-[#EEF7F6] hover:bg-[#D6EEED] text-[#3D7A72] font-medium text-sm px-3.5 py-2 rounded-xl transition-colors border border-[#A0CECC]/50">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/>
+          </svg>
+          Model catalog
+        </a>
+      </div>
       <Spinner text="Loading models..." />
     </div>
   )
@@ -145,8 +156,19 @@ export default function ModelsPage() {
     <div className="w-full">
       {/* Header */}
       <div className="mb-7">
-        <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">AI Models</p>
-        <h1 className="text-2xl font-semibold text-[#1C1C1C]">Models</h1>
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">AI Models</p>
+            <h1 className="text-2xl font-semibold text-[#1C1C1C]">Models</h1>
+          </div>
+          <a href="/dashboard/catalog"
+            className="flex items-center gap-2 bg-[#EEF7F6] hover:bg-[#D6EEED] text-[#3D7A72] font-medium text-sm px-3.5 py-2 rounded-xl transition-colors border border-[#A0CECC]/50">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/>
+            </svg>
+            Model catalog
+          </a>
+        </div>
         <p className="text-gray-400 mt-1 text-sm">Select a model and run it on your geospatial imagery</p>
       </div>
 

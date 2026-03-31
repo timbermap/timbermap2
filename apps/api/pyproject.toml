@@ -16,7 +16,8 @@ dependencies = [
     "google-cloud-tasks (>=2.21.0,<3.0.0)",
     "python-dotenv (>=1.2.2,<2.0.0)",
     "svix (>=1.89.0,<2.0.0)",
-    "geoserver-rest (>=2.10.0,<3.0.0)"
+    "geoserver-rest (>=2.10.0,<3.0.0)",
+    "resend (>=2.26.0,<3.0.0)"
 ]
 
 

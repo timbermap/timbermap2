@@ -43,6 +43,20 @@ type AdminJob = {
   email: string; username: string; model_name?: string
   image_filename?: string; area_ha_processed?: number
 }
+type UpgradeRequest = {
+  id: string; status: string; message: string; created_at: string
+  user_email: string; user_username: string; model_id: string; model_name: string
+}
+type AdminImage = {
+  id: string; filename: string; status: string; created_at: string
+  email: string; username: string; gcs_path: string
+  area_ha: number | null; epsg: string | null; file_size_bytes: number | null
+}
+type AdminVector = {
+  id: string; filename: string; status: string; created_at: string
+  email: string; username: string; gcs_path: string
+  epsg: string | null; file_size_bytes: number | null
+}
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const ChartIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M15.5 2A1.5 1.5 0 0 0 14 3.5v13a1.5 1.5 0 0 0 3 0v-13A1.5 1.5 0 0 0 15.5 2ZM9.5 6A1.5 1.5 0 0 0 8 7.5v9a1.5 1.5 0 0 0 3 0v-9A1.5 1.5 0 0 0 9.5 6ZM3.5 10A1.5 1.5 0 0 0 2 11.5v5a1.5 1.5 0 0 0 3 0v-5A1.5 1.5 0 0 0 3.5 10Z"/></svg>
@@ -58,7 +72,9 @@ const CheckIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2
 const SpinIcon    = () => <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
 const XIcon       = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const RetryIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clipRule="evenodd"/></svg>
+const ImagesIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd"/></svg>
+const VectorsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M4.75 3a.75.75 0 0 0 0 1.5h.75v.75a.75.75 0 0 0 1.5 0V4.5h.75a.75.75 0 0 0 0-1.5h-3ZM13.25 3a.75.75 0 0 0 0 1.5H14v.75a.75.75 0 0 0 1.5 0V4.5h.75a.75.75 0 0 0 0-1.5h-3ZM4.75 14a.75.75 0 0 0 0 1.5h.75v.75a.75.75 0 0 0 1.5 0V15.5h.75a.75.75 0 0 0 0-1.5h-3ZM13.25 14a.75.75 0 0 0 0 1.5H14v.75a.75.75 0 0 0 1.5 0V15.5h.75a.75.75 0 0 0 0-1.5h-3ZM7 9.25A2.25 2.25 0 0 1 9.25 7h1.5A2.25 2.25 0 0 1 13 9.25v1.5A2.25 2.25 0 0 1 10.75 13h-1.5A2.25 2.25 0 0 1 7 10.75v-1.5Z"/></svg>
 function fmtBytes(b: number) {
   if (b > 1e9) return (b / 1e9).toFixed(1) + ' GB'
   if (b > 1e6) return (b / 1e6).toFixed(1) + ' MB'
@@ -654,6 +670,12 @@ function AdminJobsTab({ clerkId, api }: { clerkId: string; api: string }) {
     fetchJobs(); setActing(null)
   }
 
+  async function handleRetry(jobId: string) {
+    setActing(jobId)
+    await fetch(`${api}/superadmin/jobs/${jobId}/retry`, { method: 'POST', headers: h })
+    fetchJobs(); setActing(null)
+  }
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -708,6 +730,12 @@ function AdminJobsTab({ clerkId, api }: { clerkId: string; api: string }) {
                             {acting === j.id ? <SpinIcon /> : <StopIcon />}Cancel
                           </button>
                         )}
+                        {(j.status === 'failed' || j.status === 'cancelled') && (
+                          <button onClick={() => handleRetry(j.id)} disabled={acting === j.id}
+                            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 disabled:opacity-50">
+                            {acting === j.id ? <SpinIcon /> : <RetryIcon />}Retry
+                          </button>
+                        )}
                         <button onClick={() => handleDelete(j.id)} disabled={acting === j.id}
                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
                           <TrashIcon />
@@ -725,12 +753,311 @@ function AdminJobsTab({ clerkId, api }: { clerkId: string; api: string }) {
   )
 }
 
+// ── Tab: All Images ───────────────────────────────────────────────────────────
+function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
+  const [images, setImages]     = useState<AdminImage[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [acting, setActing]     = useState<string | null>(null)
+  const [filter, setFilter]     = useState('')
+  const h = { 'x-clerk-id': clerkId }
+
+  const fetchImages = useCallback(() => {
+    fetch(`${api}/superadmin/images?limit=200`, { headers: h })
+      .then(r => r.json()).then(d => setImages(d.images || []))
+      .finally(() => setLoading(false))
+  }, [clerkId, api])
+
+  useEffect(() => { fetchImages() }, [fetchImages])
+
+  async function handleReprocess(imageId: string) {
+    setActing(imageId)
+    await fetch(`${api}/superadmin/images/${imageId}/reprocess`, { method: 'POST', headers: h })
+    fetchImages(); setActing(null)
+  }
+
+  async function handleDelete(imageId: string) {
+    if (!confirm('Delete this image and all its data from GCS?')) return
+    setActing(imageId)
+    await fetch(`${api}/superadmin/images/${imageId}`, { method: 'DELETE', headers: h })
+    fetchImages(); setActing(null)
+  }
+
+  const filtered = filter ? images.filter(i => i.status === filter) : images
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        {['', 'ready', 'processing', 'failed'].map(s => (
+          <button key={s} onClick={() => setFilter(s)}
+            className={`text-xs px-3 py-1.5 rounded-xl font-medium border transition-colors ${
+              filter === s ? 'bg-[#3D7A72] text-white border-[#3D7A72]' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+            }`}>
+            {s || 'All'}
+          </button>
+        ))}
+        <button onClick={() => { setLoading(true); fetchImages() }} className="ml-auto text-xs text-[#6AA8A0] hover:text-[#3D7A72]">Refresh</button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-gray-100 bg-gray-50/60">
+                {['User','Filename','Size','Area (ha)','EPSG','Status','Created','Actions'].map(col => (
+                  <th key={col} className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{col}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-300">No images found</td></tr>
+                ) : filtered.map(img => (
+                  <tr key={img.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate">{img.email}</td>
+                    <td className="px-4 py-3 text-xs text-gray-700 font-medium max-w-[160px] truncate">{img.filename}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{img.file_size_bytes ? fmtBytes(img.file_size_bytes) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 tabular-nums">{img.area_ha ? img.area_ha.toFixed(1) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400 font-mono">{img.epsg || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusCfg[img.status] || 'bg-gray-100 text-gray-500'}`}>{img.status}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(img.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {(img.status === 'failed' || img.status === 'processing') && (
+                          <button onClick={() => handleReprocess(img.id)} disabled={acting === img.id}
+                            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors disabled:opacity-50">
+                            {acting === img.id ? <SpinIcon /> : <RetryIcon />}Reprocess
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(img.id)} disabled={acting === img.id}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Tab: All Vectors ──────────────────────────────────────────────────────────
+function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
+  const [vectors, setVectors]   = useState<AdminVector[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [acting, setActing]     = useState<string | null>(null)
+  const [filter, setFilter]     = useState('')
+  const h = { 'x-clerk-id': clerkId }
+
+  const fetchVectors = useCallback(() => {
+    fetch(`${api}/superadmin/vectors?limit=200`, { headers: h })
+      .then(r => r.json()).then(d => setVectors(d.vectors || []))
+      .finally(() => setLoading(false))
+  }, [clerkId, api])
+
+  useEffect(() => { fetchVectors() }, [fetchVectors])
+
+  async function handleReprocess(vectorId: string) {
+    setActing(vectorId)
+    await fetch(`${api}/superadmin/vectors/${vectorId}/reprocess`, { method: 'POST', headers: h })
+    fetchVectors(); setActing(null)
+  }
+
+  async function handleDelete(vectorId: string) {
+    if (!confirm('Delete this vector and all its data?')) return
+    setActing(vectorId)
+    await fetch(`${api}/superadmin/vectors/${vectorId}`, { method: 'DELETE', headers: h })
+    fetchVectors(); setActing(null)
+  }
+
+  const filtered = filter ? vectors.filter(v => v.status === filter) : vectors
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        {['', 'ready', 'processing', 'failed'].map(s => (
+          <button key={s} onClick={() => setFilter(s)}
+            className={`text-xs px-3 py-1.5 rounded-xl font-medium border transition-colors ${
+              filter === s ? 'bg-[#3D7A72] text-white border-[#3D7A72]' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+            }`}>
+            {s || 'All'}
+          </button>
+        ))}
+        <button onClick={() => { setLoading(true); fetchVectors() }} className="ml-auto text-xs text-[#6AA8A0] hover:text-[#3D7A72]">Refresh</button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-gray-100 bg-gray-50/60">
+                {['User','Filename','Size','EPSG','Status','Created','Actions'].map(col => (
+                  <th key={col} className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{col}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-300">No vectors found</td></tr>
+                ) : filtered.map(vec => (
+                  <tr key={vec.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate">{vec.email}</td>
+                    <td className="px-4 py-3 text-xs text-gray-700 font-medium max-w-[160px] truncate">{vec.filename}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{vec.file_size_bytes ? fmtBytes(vec.file_size_bytes) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400 font-mono">{vec.epsg || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusCfg[vec.status] || 'bg-gray-100 text-gray-500'}`}>{vec.status}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(vec.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {(vec.status === 'failed' || vec.status === 'processing') && (
+                          <button onClick={() => handleReprocess(vec.id)} disabled={acting === vec.id}
+                            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors disabled:opacity-50">
+                            {acting === vec.id ? <SpinIcon /> : <RetryIcon />}Reprocess
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(vec.id)} disabled={acting === vec.id}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Tab: Upgrade Requests ─────────────────────────────────────────────────────
+function RequestsTab({ clerkId, api }: { clerkId: string; api: string }) {
+  const [requests, setRequests] = useState<UpgradeRequest[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [acting, setActing]     = useState<string | null>(null)
+  const h = { 'x-clerk-id': clerkId }
+
+  const fetchRequests = useCallback(() => {
+    fetch(`${api}/superadmin/upgrade-requests`, { headers: h })
+      .then(r => r.json()).then(d => setRequests(d.requests || []))
+      .finally(() => setLoading(false))
+  }, [clerkId, api])
+
+  useEffect(() => { fetchRequests() }, [fetchRequests])
+
+  async function handleAction(id: string, action: 'approve' | 'reject') {
+    setActing(id)
+    try {
+      await fetch(`${api}/superadmin/upgrade-requests/${id}/${action}`, {
+        method: 'POST', headers: h,
+      })
+      fetchRequests()
+    } finally { setActing(null) }
+  }
+
+  if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
+
+  const pending  = requests.filter(r => r.status === 'pending')
+  const resolved = requests.filter(r => r.status !== 'pending')
+
+  return (
+    <div className="space-y-4">
+      {/* Pending */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+          <span className="text-xs font-medium tracking-widest uppercase text-gray-400">Pending requests</span>
+          {pending.length > 0 && (
+            <span className="text-xs font-semibold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">{pending.length}</span>
+          )}
+        </div>
+        {pending.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-gray-300 text-center">No pending requests</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {pending.map(r => (
+              <div key={r.id} className="px-5 py-4 flex items-start gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-medium text-gray-800">{r.user_username}</span>
+                    <span className="text-xs text-gray-400">{r.user_email}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-xs font-semibold text-[#3D7A72] bg-[#EEF7F6] px-2 py-0.5 rounded-full">{r.model_name}</span>
+                    <span className="text-xs text-gray-400">{fmtDate(r.created_at)}</span>
+                  </div>
+                  {r.message && (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100 italic">"{r.message}"</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+                  <button
+                    onClick={() => handleAction(r.id, 'approve')}
+                    disabled={acting === r.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    {acting === r.id ? <SpinIcon /> : <CheckIcon />}Approve
+                  </button>
+                  <button
+                    onClick={() => handleAction(r.id, 'reject')}
+                    disabled={acting === r.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-500 hover:bg-red-50 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    {acting === r.id ? <SpinIcon /> : <XIcon />}Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Resolved */}
+      {resolved.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+            <span className="text-xs font-medium tracking-widest uppercase text-gray-400">Resolved</span>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {resolved.map(r => (
+              <div key={r.id} className="px-5 py-3 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-600">{r.user_username}</span>
+                    <span className="text-xs text-gray-400">{r.model_name}</span>
+                    <span className="text-xs text-gray-300">{fmtDate(r.created_at)}</span>
+                  </div>
+                </div>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                  r.status === 'approved' ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-red-50 text-red-500'
+                }`}>{r.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 const TABS = [
-  { key: 'overview', label: 'Overview',  icon: <ChartIcon /> },
-  { key: 'models',   label: 'Models',    icon: <CpuIcon /> },
-  { key: 'users',    label: 'Users',     icon: <UsersIcon /> },
-  { key: 'jobs',     label: 'All jobs',  icon: <JobsIcon /> },
+  { key: 'overview',  label: 'Overview',  icon: <ChartIcon /> },
+  { key: 'models',    label: 'Models',    icon: <CpuIcon /> },
+  { key: 'users',     label: 'Users',     icon: <UsersIcon /> },
+  { key: 'jobs',      label: 'All jobs',  icon: <JobsIcon /> },
+  { key: 'images',    label: 'Images',    icon: <ImagesIcon /> },
+  { key: 'vectors',   label: 'Vectors',   icon: <VectorsIcon /> },
+  { key: 'requests',  label: 'Requests',  icon: <CheckIcon /> },
 ]
 
 export default function AdminPage() {
@@ -791,10 +1118,13 @@ export default function AdminPage() {
       </div>
 
       {/* Tab content */}
-      {tab === 'overview' && <OverviewTab clerkId={user!.id} api={API} />}
-      {tab === 'models'   && <ModelsTab  clerkId={user!.id} api={API} />}
-      {tab === 'users'    && <UsersTab   clerkId={user!.id} api={API} />}
-      {tab === 'jobs'     && <AdminJobsTab clerkId={user!.id} api={API} />}
+      {tab === 'overview'  && <OverviewTab    clerkId={user!.id} api={API} />}
+      {tab === 'models'    && <ModelsTab      clerkId={user!.id} api={API} />}
+      {tab === 'users'     && <UsersTab       clerkId={user!.id} api={API} />}
+      {tab === 'jobs'      && <AdminJobsTab   clerkId={user!.id} api={API} />}
+      {tab === 'images'    && <AllImagesTab   clerkId={user!.id} api={API} />}
+      {tab === 'vectors'   && <AllVectorsTab  clerkId={user!.id} api={API} />}
+      {tab === 'requests'  && <RequestsTab    clerkId={user!.id} api={API} />}
     </div>
   )
 }

@@ -16,12 +16,12 @@ type SortDir = 'asc' | 'desc'
 
 const PAGE_SIZE = 15
 
-const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z"/><path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z"/></svg>
+const UploadIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z"/><path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z"/></svg>
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z"/><path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z"/></svg>
-const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 3.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd"/></svg>
-const ReprojIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
-const MapIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
-const SpinIcon = () => <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+const TrashIcon    = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 3.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd"/></svg>
+const ReprojIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
+const MapIcon      = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
+const SpinIcon     = () => <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
 const SortIcon = ({ dir }: { dir?: SortDir }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline ml-1">
     {dir === 'asc'  ? <path fillRule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.29 9.77a.75.75 0 0 1-1.08-1.04l5.25-5.5a.75.75 0 0 1 1.08 0l5.25 5.5a.75.75 0 1 1-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0 1 10 17Z" clipRule="evenodd"/> :
@@ -32,20 +32,23 @@ const SortIcon = ({ dir }: { dir?: SortDir }) => (
 
 export default function ImagesPage() {
   const { user, isLoaded } = useUser()
-  const [uploads, setUploads] = useState<UploadItem[]>([])
-  const [images, setImages]   = useState<ImageFile[]>([])
+  const [uploads, setUploads]     = useState<UploadItem[]>([])
+  const [images, setImages]       = useState<ImageFile[]>([])
   const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showTransform, setShowTransform]   = useState(false)
+  const [loading, setLoading]     = useState(true)
+  const [selectedId, setSelectedId]             = useState<string | null>(null)
+  const [showTransform, setShowTransform]       = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [transforming, setTransforming] = useState(false)
+  const [deletingId, setDeletingId]             = useState<string | null>(null)
+  const [isDeleting, setIsDeleting]             = useState(false)
+  const [transforming, setTransforming]         = useState(false)
   const [transform, setTransform] = useState<TransformForm>({ new_epsg: '', new_resolution_x: '', new_resolution_y: '' })
-  const [sortKey, setSortKey]   = useState<SortKey>('created_at')
-  const [sortDir, setSortDir]   = useState<SortDir>('desc')
-  const [page, setPage]         = useState(1)
+  const [sortKey, setSortKey]     = useState<SortKey>('created_at')
+  const [sortDir, setSortDir]     = useState<SortDir>('desc')
+  const [page, setPage]           = useState(1)
+  // Delete all
+  const [confirmAll, setConfirmAll]   = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
 
@@ -132,6 +135,17 @@ export default function ImagesPage() {
     } catch (err) { console.error(err) } finally { setIsDeleting(false) }
   }
 
+  async function handleDeleteAll() {
+    if (!user) return
+    setDeletingAll(true)
+    try {
+      await Promise.all(images.map(img =>
+        fetch(`${API}/images/${img.id}?clerk_id=${user.id}`, { method: 'DELETE' }).catch(() => {})
+      ))
+      await fetchData()
+    } finally { setDeletingAll(false); setConfirmAll(false) }
+  }
+
   async function handleDownload(imageId: string) {
     if (!user) return
     const res = await fetch(`${API}/images/${imageId}/download?clerk_id=${user.id}`)
@@ -139,7 +153,7 @@ export default function ImagesPage() {
     if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
-  function viewOnMap(img: ImageFile) {
+  function viewOnMap(_img: ImageFile) {
     window.location.href = '/dashboard/map'
   }
 
@@ -167,7 +181,6 @@ export default function ImagesPage() {
   }
   function displayBands(n: number | null) {
     if (!n) return '—'
-    // Show max 3 bands (4th band is usually alpha/NIR not used)
     return Math.min(n, 3)
   }
 
@@ -195,6 +208,32 @@ export default function ImagesPage() {
 
   return (
     <div className="w-full">
+
+      {/* Delete all modal */}
+      {confirmAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+              <TrashIcon />
+            </div>
+            <h3 className="font-semibold text-gray-900 text-center mb-1">Delete all images?</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              This will permanently delete all {images.length} images and their files. Jobs won't be affected.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmAll(false)} disabled={deletingAll}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleDeleteAll} disabled={deletingAll}
+                className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm hover:bg-red-600 transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                {deletingAll ? <><SpinIcon />Deleting...</> : 'Delete all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex items-start justify-between">
         <div>
           <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">Catalog</p>
@@ -264,7 +303,7 @@ export default function ImagesPage() {
         </div>
       )}
 
-      {/* Delete modal */}
+      {/* Delete single modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
@@ -297,20 +336,22 @@ export default function ImagesPage() {
       ) : (
         <>
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="overflow-x-auto -mx-0">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60">
+                    {/* Map column — no sort, fixed narrow */}
+                    <th className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 w-16">Map</th>
                     {([
-                      { key: 'filename', label: 'Filename' },
-                      { key: null, label: 'EPSG' },
-                      { key: null, label: 'Bands' },
-                      { key: null, label: 'GSD' },
-                      { key: 'area_ha', label: 'Area (ha)' },
-                      { key: 'filesize', label: 'Size' },
+                      { key: 'filename',   label: 'Filename' },
+                      { key: null,         label: 'EPSG' },
+                      { key: null,         label: 'Bands' },
+                      { key: null,         label: 'GSD' },
+                      { key: 'area_ha',    label: 'Area (ha)' },
+                      { key: 'filesize',   label: 'Size' },
                       { key: 'created_at', label: 'Uploaded' },
-                      { key: 'status', label: 'Status' },
-                      { key: null, label: 'Actions' },
+                      { key: 'status',     label: 'Status' },
+                      { key: null,         label: 'Actions' },
                     ] as { key: SortKey | null, label: string }[]).map(col => (
                       <th key={col.label}
                         className={`text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap ${col.key ? 'cursor-pointer hover:text-gray-600 select-none' : ''}`}
@@ -326,6 +367,19 @@ export default function ImagesPage() {
                     const isActive = activeImageIds.has(img.id)
                     return (
                       <tr key={img.id} className="border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors">
+                        {/* Map column */}
+                        <td className="px-4 py-3">
+                          {img.status === 'ready' && !isActive ? (
+                            <button onClick={() => viewOnMap(img)} title="View on map"
+                              className="inline-flex items-center justify-center w-8 h-8 text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                              <MapIcon />
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-8 h-8 text-gray-200">
+                              <MapIcon />
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-gray-900 font-medium max-w-[160px]">
                           <span className="truncate block text-xs md:text-sm">{img.filename}</span>
                         </td>
@@ -346,6 +400,7 @@ export default function ImagesPage() {
                             </span>
                           )}
                         </td>
+                        {/* Actions: Reproject → Download → Delete */}
                         <td className="px-4 py-3">
                           {isActive || (isDeleting && deletingId === img.id) ? (
                             <span className="inline-flex items-center gap-1 text-xs text-gray-400">
@@ -353,12 +408,6 @@ export default function ImagesPage() {
                             </span>
                           ) : (
                             <div className="flex items-center gap-0.5">
-                              {img.status === 'ready' && (
-                                <button onClick={() => viewOnMap(img)} title="View on map"
-                                  className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors font-medium">
-                                  <MapIcon />Map
-                                </button>
-                              )}
                               <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }} title="Reproject"
                                 className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
                                 <ReprojIcon />
@@ -398,6 +447,16 @@ export default function ImagesPage() {
                 <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
                   className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">Next →</button>
               </div>
+            </div>
+          )}
+
+          {/* Delete all */}
+          {images.length > 0 && (
+            <div className="flex justify-end mt-2">
+              <button onClick={() => setConfirmAll(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
+                <TrashIcon />Delete all images
+              </button>
             </div>
           )}
         </>
