@@ -14,7 +14,7 @@ from stats import router as stats_router
 from superadmin import router as superadmin_router, models_router
 
 from database import (
-    ensure_user, get_user_id,
+    ensure_user, get_user_id, get_conn,
     insert_image, insert_vector,
     get_images, get_vectors, get_jobs,
     insert_job,
@@ -192,6 +192,24 @@ def transform_image(req: TransformImageRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/images/{image_id}/thumbnail")
+def thumbnail_image(image_id: str, clerk_id: str):
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    images = get_images(user_id)
+    if not any(str(i["id"]) == image_id for i in images):
+        raise HTTPException(status_code=403, detail="Not found")
+    try:
+        client = storage.Client()
+        bucket = client.bucket(GCS_BUCKET)
+        blob = bucket.blob(f"users/thumbnails/{image_id}.jpg")
+        url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/images/{image_id}")
 def delete_image(image_id: str, clerk_id: str):
     user_id = get_user_id(clerk_id)
@@ -289,6 +307,48 @@ def download_vector(vector_id: str, clerk_id: str):
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/vectors/{vector_id}/preview")
+def preview_vector(vector_id: str, clerk_id: str):
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    vectors = get_vectors(user_id)
+    if not any(str(v["id"]) == vector_id for v in vectors):
+        raise HTTPException(status_code=403, detail="Not found")
+    table = f"vec_{vector_id.replace('-', '_')}"
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"""
+            SELECT
+                ST_AsSVG(ST_Transform(ST_Collect(geometry), 4326), 0, 4) AS path,
+                ST_XMin(ST_Extent(ST_Transform(geometry, 4326))) AS minx,
+                ST_YMin(ST_Extent(ST_Transform(geometry, 4326))) AS miny,
+                ST_XMax(ST_Extent(ST_Transform(geometry, 4326))) AS maxx,
+                ST_YMax(ST_Extent(ST_Transform(geometry, 4326))) AS maxy
+            FROM vectors."{table}"
+        """)
+        row = cur.fetchone()
+    finally:
+        cur.close(); conn.close()
+    if not row or not row["path"]:
+        raise HTTPException(status_code=404, detail="No geometry")
+    minx, miny, maxx, maxy = float(row["minx"]), float(row["miny"]), float(row["maxx"]), float(row["maxy"])
+    w, h = maxx - minx, maxy - miny
+    pad = max(w, h) * 0.08
+    vb = f"{minx - pad} {-maxy - pad} {w + 2*pad} {h + 2*pad}"
+    sw = max(w, h) * 0.008
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">'
+        f'<path d="{row["path"]}" fill="#6AA8A0" fill-opacity="0.35" stroke="#3D7A72" stroke-width="{sw}" stroke-linejoin="round"/>'
+        f'</svg>'
+    )
+    return Response(
+        content=svg, media_type="image/svg+xml",
+        headers={"X-Bbox": f"{minx},{miny},{maxx},{maxy}", "Access-Control-Expose-Headers": "X-Bbox"},
+    )
 
 
 @app.post("/vectors/from-aoi")

@@ -297,6 +297,18 @@ export default function MapPage() {
 
   useEffect(() => { if (isLoaded && user) fetchLayers() }, [user, isLoaded, fetchLayers])
 
+  // ── Zoom to image from ?bbox= param ──────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady || !map.current) return
+    const params = new URLSearchParams(window.location.search)
+    const bbox = params.get('bbox')
+    if (!bbox) return
+    const parts = bbox.split(',').map(Number)
+    if (parts.length !== 4 || parts.some(isNaN)) return
+    const [minx, miny, maxx, maxy] = parts
+    map.current.fitBounds([[minx, miny], [maxx, maxy]], { padding: 80, duration: 900, maxZoom: 18 })
+  }, [mapReady])
+
   // ── Init map ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainer.current || map.current) return

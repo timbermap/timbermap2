@@ -7,6 +7,8 @@ type ImageFile = {
   id: string; filename: string; epsg: string | null; num_bands: number | null
   area_ha: number | null; filesize: number | null; pixel_size_x: number | null
   status: string; created_at: string
+  bbox_minx: number | null; bbox_miny: number | null
+  bbox_maxx: number | null; bbox_maxy: number | null
 }
 type Job = { id: string; type: string; status: string; input_ref: Record<string, unknown> | null }
 type UploadItem = { file: File; progress: number; status: 'waiting'|'uploading'|'done'|'error'; message: string }
@@ -49,6 +51,9 @@ export default function ImagesPage() {
   // Delete all
   const [confirmAll, setConfirmAll]   = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const fetchedThumbIds = useRef<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
 
@@ -76,6 +81,25 @@ export default function ImagesPage() {
 
   useEffect(() => { if (isLoaded && user) fetchData() }, [isLoaded, user, fetchData])
   useEffect(() => { const t = setInterval(fetchData, 5000); return () => clearInterval(t) }, [fetchData])
+
+  useEffect(() => {
+    if (!user || !images.length) return
+    const toFetch = images.filter(img => img.status === 'ready' && !fetchedThumbIds.current.has(img.id))
+    if (!toFetch.length) return
+    toFetch.forEach(img => fetchedThumbIds.current.add(img.id))
+    Promise.all(
+      toFetch.map(img =>
+        fetch(`${API}/images/${img.id}/thumbnail?clerk_id=${user.id}`)
+          .then(r => r.json())
+          .then(d => ({ id: img.id, url: d.url as string }))
+          .catch(() => ({ id: img.id, url: null }))
+      )
+    ).then(results => {
+      const newUrls: Record<string, string> = {}
+      for (const { id, url } of results) { if (url) newUrls[id] = url }
+      setThumbnailUrls(prev => ({ ...prev, ...newUrls }))
+    })
+  }, [images, user, API])
 
   async function uploadSingle(item: UploadItem, index: number) {
     if (!user) return
@@ -139,7 +163,8 @@ export default function ImagesPage() {
     if (!user) return
     setDeletingAll(true)
     try {
-      await Promise.all(images.map(img =>
+      const deletable = images.filter(img => !activeImageIds.has(img.id))
+      await Promise.all(deletable.map(img =>
         fetch(`${API}/images/${img.id}?clerk_id=${user.id}`, { method: 'DELETE' }).catch(() => {})
       ))
       await fetchData()
@@ -153,8 +178,13 @@ export default function ImagesPage() {
     if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
   }
 
-  function viewOnMap(_img: ImageFile) {
-    window.location.href = '/dashboard/map'
+  function viewOnMap(img: ImageFile) {
+    const { bbox_minx, bbox_miny, bbox_maxx, bbox_maxy } = img
+    if (bbox_minx != null && bbox_miny != null && bbox_maxx != null && bbox_maxy != null) {
+      window.location.href = `/dashboard/map?bbox=${bbox_minx},${bbox_miny},${bbox_maxx},${bbox_maxy}`
+    } else {
+      window.location.href = '/dashboard/map'
+    }
   }
 
   function toggleSort(key: SortKey) {
@@ -209,24 +239,58 @@ export default function ImagesPage() {
   return (
     <div className="w-full">
 
+      {/* Thumbnail preview modal */}
+      {previewId && thumbnailUrls[previewId] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setPreviewId(null)}>
+          <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setPreviewId(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-500 hover:text-gray-800 cursor-pointer transition-colors z-10">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+              </svg>
+            </button>
+            <p className="text-white/50 text-xs uppercase tracking-widest text-center mb-3">Preview image</p>
+            <img src={thumbnailUrls[previewId]} alt={images.find(i => i.id === previewId)?.filename}
+              className="w-full rounded-2xl shadow-2xl object-contain max-h-[80vh]" />
+            <p className="text-white/70 text-xs text-center mt-3 truncate">
+              {images.find(i => i.id === previewId)?.filename}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Delete all modal */}
       {confirmAll && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
-            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+            <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-4 text-rose-400">
               <TrashIcon />
             </div>
             <h3 className="font-semibold text-gray-900 text-center mb-1">Delete all images?</h3>
-            <p className="text-sm text-gray-500 text-center mb-6">
-              This will permanently delete all {images.length} images and their files. Jobs won't be affected.
-            </p>
+            {(() => {
+              const skipped = images.filter(img => activeImageIds.has(img.id)).length
+              const deletable = images.length - skipped
+              return (
+                <div className="text-center mb-6">
+                  <p className="text-sm text-gray-500">
+                    This will permanently delete <span className="font-medium text-gray-700">{deletable} image{deletable !== 1 ? 's' : ''}</span> and all their files (COGs, thumbnails, storage).
+                  </p>
+                  {skipped > 0 && (
+                    <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-3">
+                      {skipped} image{skipped !== 1 ? 's' : ''} with active jobs will be skipped.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
             <div className="flex gap-3">
               <button onClick={() => setConfirmAll(false)} disabled={deletingAll}
                 className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleDeleteAll} disabled={deletingAll}
-                className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm hover:bg-red-600 transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+              <button onClick={handleDeleteAll} disabled={deletingAll || images.filter(img => !activeImageIds.has(img.id)).length === 0}
+                className="flex-1 px-4 py-2.5 bg-rose-400 text-white rounded-xl text-sm hover:bg-rose-500 transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-default">
                 {deletingAll ? <><SpinIcon />Deleting...</> : 'Delete all'}
               </button>
             </div>
@@ -312,7 +376,7 @@ export default function ImagesPage() {
             <p className="text-sm font-medium text-gray-700 mb-5 bg-gray-50 px-3 py-2 rounded-lg truncate">{deletingFilename}</p>
             <div className="flex gap-2">
               <button onClick={handleDelete} disabled={isDeleting}
-                className="flex-1 bg-red-500 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
+                className="flex-1 bg-rose-400 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-rose-500 transition-colors disabled:opacity-50">
                 {isDeleting ? 'Deleting...' : 'Delete permanently'}
               </button>
               <button onClick={() => { setShowDeleteConfirm(false); setDeletingId(null) }}
@@ -340,8 +404,7 @@ export default function ImagesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60">
-                    {/* Map column — no sort, fixed narrow */}
-                    <th className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 w-16">Map</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 w-14">Preview</th>
                     {([
                       { key: 'filename',   label: 'Filename' },
                       { key: null,         label: 'EPSG' },
@@ -354,7 +417,7 @@ export default function ImagesPage() {
                       { key: null,         label: 'Actions' },
                     ] as { key: SortKey | null, label: string }[]).map(col => (
                       <th key={col.label}
-                        className={`text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap ${col.key ? 'cursor-pointer hover:text-gray-600 select-none' : ''}`}
+                        className={`text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap ${col.key ? 'cursor-pointer hover:text-gray-600 select-none' : 'cursor-default'}`}
                         onClick={() => col.key && toggleSort(col.key)}>
                         {col.label}
                         {col.key && <SortIcon dir={sortKey === col.key ? sortDir : undefined} />}
@@ -367,21 +430,26 @@ export default function ImagesPage() {
                     const isActive = activeImageIds.has(img.id)
                     return (
                       <tr key={img.id} className="border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors">
-                        {/* Map column */}
+                        {/* Thumbnail column */}
                         <td className="px-4 py-3">
-                          {img.status === 'ready' && !isActive ? (
-                            <button onClick={() => viewOnMap(img)} title="View on map"
-                              className="inline-flex items-center justify-center w-8 h-8 text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
-                              <MapIcon />
-                            </button>
+                          {thumbnailUrls[img.id] ? (
+                            <img src={thumbnailUrls[img.id]} alt={img.filename}
+                              onClick={() => setPreviewId(img.id)}
+                              className="w-10 h-10 object-cover rounded-lg border border-gray-100 shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 transition-all" />
                           ) : (
-                            <span className="inline-flex items-center justify-center w-8 h-8 text-gray-200">
-                              <MapIcon />
-                            </span>
+                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                              {img.status === 'ready' ? (
+                                <SpinIcon />
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300">
+                                  <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd"/>
+                                </svg>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-900 font-medium max-w-[160px]">
-                          <span className="truncate block text-xs md:text-sm">{img.filename}</span>
+                          <span className="truncate block text-xs md:text-sm" title={img.filename}>{img.filename}</span>
                         </td>
                         <td className="px-4 py-3 text-gray-500 font-mono text-xs">{img.epsg || '—'}</td>
                         <td className="px-4 py-3 text-gray-500 text-xs">{displayBands(img.num_bands)}</td>
@@ -389,6 +457,7 @@ export default function ImagesPage() {
                         <td className="px-4 py-3 text-gray-500 text-xs">{img.area_ha ? img.area_ha.toLocaleString() : '—'}</td>
                         <td className="px-4 py-3 text-gray-500 text-xs">{fmt(img.filesize)}</td>
                         <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(img.created_at)}</td>
+                        {/* Status */}
                         <td className="px-4 py-3">
                           {isActive ? (
                             <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 font-medium">
@@ -400,24 +469,26 @@ export default function ImagesPage() {
                             </span>
                           )}
                         </td>
-                        {/* Actions: Reproject → Download → Delete */}
+                        {/* Actions: Map → Reproject → Download → Delete */}
                         <td className="px-4 py-3">
-                          {isActive || (isDeleting && deletingId === img.id) ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
-                              {isDeleting && deletingId === img.id ? <><SpinIcon />Deleting...</> : 'Busy...'}
-                            </span>
+                          {isDeleting && deletingId === img.id ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-gray-400"><SpinIcon />Deleting...</span>
                           ) : (
                             <div className="flex items-center gap-0.5">
-                              <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }} title="Reproject"
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                              <button onClick={() => viewOnMap(img)} title="View on map" disabled={img.status !== 'ready' || isActive}
+                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                                <MapIcon />
+                              </button>
+                              <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }} title="Reproject" disabled={isActive}
+                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
                                 <ReprojIcon />
                               </button>
-                              <button onClick={() => handleDownload(img.id)} title="Download"
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                              <button onClick={() => handleDownload(img.id)} title="Download" disabled={img.status !== 'ready' || isActive}
+                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
                                 <DownloadIcon />
                               </button>
-                              <button onClick={() => { setDeletingId(img.id); setShowDeleteConfirm(true) }} title="Delete"
-                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                              <button onClick={() => { setDeletingId(img.id); setShowDeleteConfirm(true) }} title="Delete" disabled={isActive}
+                                className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
                                 <TrashIcon />
                               </button>
                             </div>
@@ -437,15 +508,15 @@ export default function ImagesPage() {
               <p className="text-xs text-gray-400">{images.length} images · page {page} of {totalPages}</p>
               <div className="flex items-center gap-1">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">← Prev</button>
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-default">← Prev</button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
                   <button key={p} onClick={() => setPage(p)}
-                    className={`w-8 h-8 text-xs rounded-lg transition-colors ${p === page ? 'bg-[#3D7A72] text-white' : 'border border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
+                    className={`w-8 h-8 text-xs rounded-lg transition-colors cursor-pointer ${p === page ? 'bg-[#3D7A72] text-white' : 'border border-gray-200 hover:bg-gray-50 text-gray-600'}`}>
                     {p}
                   </button>
                 ))}
                 <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">Next →</button>
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-default">Next →</button>
               </div>
             </div>
           )}
@@ -454,7 +525,7 @@ export default function ImagesPage() {
           {images.length > 0 && (
             <div className="flex justify-end mt-2">
               <button onClick={() => setConfirmAll(true)}
-                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-rose-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-rose-50 cursor-pointer">
                 <TrashIcon />Delete all images
               </button>
             </div>
