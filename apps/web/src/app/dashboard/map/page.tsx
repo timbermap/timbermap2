@@ -82,14 +82,14 @@ const BasemapIcons = {
 }
 
 const BASEMAPS: BasemapDef[] = [
+  { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
   { id: 'satellite', label: 'Satellite', icon: BasemapIcons.Satellite,
     style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri') },
   { id: 'osm', label: 'Streets', icon: BasemapIcons.Streets,
     style: makeBasemap('https://tile.openstreetmap.org/{z}/{x}/{y}.png', '© OpenStreetMap contributors') },
   { id: 'terrain', label: 'Terrain', icon: BasemapIcons.Terrain,
     style: makeBasemap('https://tile.opentopomap.org/{z}/{x}/{y}.png', '© OpenTopoMap') },
-  { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
-    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
   { id: 'light', label: 'Light', icon: BasemapIcons.Light,
     style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
 ]
