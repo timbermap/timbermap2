@@ -299,6 +299,44 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      {/* ── Getting started (new accounts only) ── */}
+      {images.length === 0 && vectors.length === 0 && (
+        <div className="rounded-2xl border border-[#A0CECC]/50 bg-gradient-to-br from-[#EEF7F6] to-white p-6 mb-4">
+          <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Welcome to Timbermap</h2>
+          <p className="text-sm text-gray-500 mb-5">Three steps to your first result — start with whichever you have on hand.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              {
+                n: '1', title: 'Upload your imagery',
+                body: 'A raster (orthomosaic, satellite scene) or a shapefile — whatever you’re starting from.',
+                cta: 'Upload images', href: '/dashboard/images',
+              },
+              {
+                n: '2', title: 'Pick an AI model',
+                body: 'Choose from the catalog — tree crown counts, tillage lines, fault detection, and more.',
+                cta: 'Browse catalog', href: '/dashboard/catalog',
+              },
+              {
+                n: '3', title: 'Run it and explore',
+                body: 'Kick off a job, then view the results layered on the interactive map.',
+                cta: 'Open map', href: '/dashboard/map',
+              },
+            ].map(step => (
+              <div key={step.n} className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col">
+                <div className="w-7 h-7 rounded-full bg-[#3D7A72] text-white text-xs font-semibold flex items-center justify-center mb-3">
+                  {step.n}
+                </div>
+                <p className="text-sm font-semibold text-[#1C1C1C] mb-1">{step.title}</p>
+                <p className="text-xs text-gray-400 leading-relaxed mb-3 flex-1">{step.body}</p>
+                <Link href={step.href} className="text-xs font-medium text-[#3D7A72] hover:text-[#2A5750] transition-colors">
+                  {step.cta} →
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Row 1: Stats ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard
