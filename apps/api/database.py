@@ -71,15 +71,25 @@ def get_conn() -> _PooledConn:
 # ── Users ────────────────────────────────────────────────────────────────────
 
 def ensure_user(clerk_id: str, email: str, username: str):
+    """Upsert, used as a fallback wherever a user might not exist yet (e.g. the
+    Clerk webhook hasn't landed). New users need a personal account created
+    alongside them — account_id is NOT NULL — same as webhooks.py user.created."""
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO users (clerk_id, email, username)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (clerk_id) DO UPDATE SET email = EXCLUDED.email
-        RETURNING id
-    """, (clerk_id, email, username))
-    row = cur.fetchone()
+    cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
+    existing = cur.fetchone()
+    if existing:
+        cur.execute("UPDATE users SET email = %s WHERE clerk_id = %s RETURNING id", (email, clerk_id))
+        row = cur.fetchone()
+    else:
+        cur.execute("INSERT INTO accounts DEFAULT VALUES RETURNING id")
+        account_id = cur.fetchone()["id"]
+        cur.execute("""
+            INSERT INTO users (clerk_id, email, username, account_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """, (clerk_id, email, username, account_id))
+        row = cur.fetchone()
     conn.commit()
     cur.close()
     conn.close()
