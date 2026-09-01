@@ -1,7 +1,7 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
 import React from 'react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Spinner from '@/components/Spinner'
 
 type Job = {
