@@ -318,7 +318,7 @@ export default function CatalogPage() {
 
   async function load() {
     if (!user) return
-    const res = await fetch('/api/catalog/models')
+    const res = await fetch('/api/catalog/models', { cache: 'no-store' })
     if (res.ok) setModels(await res.json())
     setLoading(false)
   }

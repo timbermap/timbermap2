@@ -1,6 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -20,7 +22,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
     body = await req.text()
   }
 
-  const res = await fetch(url, { method: req.method, headers, body })
+  const res = await fetch(url, { method: req.method, headers, body, cache: 'no-store' })
   const text = await res.text()
   let data: unknown
   try { data = JSON.parse(text) } catch { data = { error: text } }
