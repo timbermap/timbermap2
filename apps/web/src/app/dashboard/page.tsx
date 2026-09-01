@@ -198,27 +198,38 @@ export default function Dashboard() {
   const [vectorModal, setVectorModal] = useState<{ id: string; filename: string } | null>(null)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
 
+  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number; jobs_this_week: number } | null>(null)
+  const [tierLimits,  setTierLimits]  = useState<Record<string, { storage_limit_gb: number | null; weekly_job_limit: number | null }>>({})
+
   useEffect(() => {
     if (!isLoaded || !user) return
     async function load() {
       try {
-        const [iR, vR, jR, mR] = await Promise.all([
+        const [iR, vR, jR, mR, aR, tR] = await Promise.all([
           fetch(`${API}/images/${user!.id}`).catch(() => null),
           fetch(`${API}/vectors/${user!.id}`).catch(() => null),
           fetch(`${API}/jobs/${user!.id}`).catch(() => null),
           fetch('/api/catalog/models').catch(() => null),
+          fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
+          fetch(`${API}/account/tier-limits`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
         ])
-        const [iD, vD, jD, mD] = await Promise.all([
+        const [iD, vD, jD, mD, aD, tD] = await Promise.all([
           (iR?.ok ? iR.json().catch(() => ({})) : {}) as { images?: ImageFile[] },
           (vR?.ok ? vR.json().catch(() => ({})) : {}) as { vectors?: VectorFile[] },
           (jR?.ok ? jR.json().catch(() => ({})) : {}) as { jobs?: Job[] },
           (mR?.ok ? mR.json().catch(() => []) : [])   as Model[],
+          (aR?.ok ? aR.json().catch(() => null) : null) as { account_plan: string; storage_bytes: number; jobs_this_week: number } | null,
+          (tR?.ok ? tR.json().catch(() => ({ tiers: [] })) : { tiers: [] }) as { tiers: { tier: string; storage_limit_gb: number | null; weekly_job_limit: number | null }[] },
         ])
         const imgs: ImageFile[] = iD.images || []
         setImages(imgs)
         setVectors(vD.vectors || [])
         setJobs(jD.jobs || [])
         setModels(Array.isArray(mD) ? mD : [])
+        setAccountInfo(aD)
+        const limitsMap: Record<string, { storage_limit_gb: number | null; weekly_job_limit: number | null }> = {}
+        ;(tD.tiers || []).forEach(t => { limitsMap[t.tier] = { storage_limit_gb: t.storage_limit_gb, weekly_job_limit: t.weekly_job_limit } })
+        setTierLimits(limitsMap)
         setLoading(false)
 
         // Fetch thumbnails for 3 most recent ready images
@@ -242,6 +253,10 @@ export default function Dashboard() {
   const name    = user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'there'
   const isPro   = models.some(m => !m.is_free && m.has_access)
   const planLabel = isPro ? 'Pro account' : 'Free account'
+  const tier = accountInfo?.account_plan === 'custom' ? 'custom' : (isPro ? 'active' : 'basic')
+  const limit = tierLimits[tier]
+  const storageLimitBytes = limit?.storage_limit_gb != null ? limit.storage_limit_gb * 1e9 : null
+  const jobsLimit = limit?.weekly_job_limit ?? null
 
   const readyImages       = images.filter(i => i.status === 'ready')
   const imagesThisWeek    = images.filter(i => i.created_at && isThisWeek(i.created_at)).length
@@ -547,8 +562,24 @@ export default function Dashboard() {
             <ResourceRow label="Vectors" used={vectors.length} limit={null}/>
             <ResourceRow label="Active models" used={activeModels.length} limit={null}/>
             <ResourceRow label="Ha processed" used={totalHa > 0 ? formatHa(totalHa) : 0} limit={null} unit="ha"/>
+            {accountInfo && (
+              <>
+                <div className="pt-2 border-t border-gray-50">
+                  <ResourceRow
+                    label="Storage"
+                    used={fmtBytes(accountInfo.storage_bytes)}
+                    limit={storageLimitBytes !== null ? fmtBytes(storageLimitBytes) : null}
+                    pct={storageLimitBytes ? (accountInfo.storage_bytes / storageLimitBytes) * 100 : 0}
+                  />
+                </div>
+                <ResourceRow
+                  label="Jobs this week"
+                  used={accountInfo.jobs_this_week}
+                  limit={jobsLimit}
+                />
+              </>
+            )}
           </div>
-          <p className="text-xs text-gray-300 mt-5 text-center">Usage limits coming soon</p>
         </div>
 
       </div>
@@ -556,7 +587,12 @@ export default function Dashboard() {
   )
 }
 
-function ResourceRow({ label, used, limit, unit }: { label: string; used: number | string; limit: number | null; unit?: string }) {
+function ResourceRow({ label, used, limit, unit, pct }: {
+  label: string; used: number | string; limit: number | string | null; unit?: string; pct?: number
+}) {
+  const width = pct !== undefined
+    ? Math.min(100, pct)
+    : (typeof limit === 'number' && limit > 0 ? Math.min(100, (Number(used) / limit) * 100) : 0)
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
@@ -566,11 +602,13 @@ function ResourceRow({ label, used, limit, unit }: { label: string; used: number
         </span>
       </div>
       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-[#A0CECC] rounded-full transition-all"
-          style={{ width: limit !== null && limit > 0 ? `${Math.min(100, (Number(used) / limit) * 100)}%` : '0%' }}
-        />
+        <div className="h-full bg-[#A0CECC] rounded-full transition-all" style={{ width: `${width}%` }} />
       </div>
     </div>
   )
+}
+function fmtBytes(b: number) {
+  if (b > 1e9) return (b / 1e9).toFixed(1) + ' GB'
+  if (b > 1e6) return (b / 1e6).toFixed(1) + ' MB'
+  return (b / 1e3).toFixed(0) + ' KB'
 }

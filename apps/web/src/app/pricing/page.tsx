@@ -15,7 +15,8 @@ const TIERS = [
     features: [
       'Your own workspace — upload and process independently',
       'Free AI models (Gap & Clearing Detection)',
-      '5 GB storage',
+      '10 GB storage',
+      'Up to 5 processing jobs per week',
       'Interactive map with satellite, terrain and street basemaps',
       'GeoJSON, Shapefile and COG exports',
     ],

@@ -91,6 +91,10 @@ class SetSuperadminRequest(BaseModel):
 class SetPlanRequest(BaseModel):
     is_custom: bool
 
+class SetTierLimitRequest(BaseModel):
+    storage_limit_gb: Optional[int] = None
+    weekly_job_limit: Optional[int] = None
+
 class EditJobRequest(BaseModel):
     status: Optional[str] = None
     message: Optional[str] = None
@@ -319,6 +323,18 @@ def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require
     ok = database.superadmin_set_plan(target_clerk_id, plan)
     if not ok: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "plan": plan}
+
+@router.get("/tier-limits")
+def get_tier_limits(_: str = Depends(require_superadmin)):
+    return {"tiers": database.get_tier_limits()}
+
+@router.put("/tier-limits/{tier}")
+def set_tier_limit(tier: str, req: SetTierLimitRequest, _: str = Depends(require_superadmin)):
+    if tier not in ("basic", "active", "custom"):
+        raise HTTPException(400, "Unknown tier")
+    ok = database.set_tier_limit(tier, req.storage_limit_gb, req.weekly_job_limit)
+    if not ok: raise HTTPException(404, "Tier not found")
+    return {"updated": True, "tier": tier}
 
 # ── Jobs (admin) ──────────────────────────────────────────────────────────────
 

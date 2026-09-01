@@ -114,6 +114,7 @@ const ChartIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2
 const CpuIcon     = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M14 6H6v8h8V6Z"/><path fillRule="evenodd" d="M9.25 3V1.75a.75.75 0 0 1 1.5 0V3h1.5V1.75a.75.75 0 0 1 1.5 0V3h.5A2.75 2.75 0 0 1 17 5.75v.5h1.25a.75.75 0 0 1 0 1.5H17v1.5h1.25a.75.75 0 0 1 0 1.5H17v1.5h1.25a.75.75 0 0 1 0 1.5H17v.5A2.75 2.75 0 0 1 14.25 17h-.5v1.25a.75.75 0 0 1-1.5 0V17h-1.5v1.25a.75.75 0 0 1-1.5 0V17h-1.5v1.25a.75.75 0 0 1-1.5 0V17h-.5A2.75 2.75 0 0 1 3 14.25v-.5H1.75a.75.75 0 0 1 0-1.5H3v-1.5H1.75a.75.75 0 0 1 0-1.5H3v-1.5H1.75a.75.75 0 0 1 0-1.5H3v-.5A2.75 2.75 0 0 1 5.75 3h.5V1.75a.75.75 0 0 1 1.5 0V3h1.5ZM4.5 5.75c0-.69.56-1.25 1.25-1.25h8.5c.69 0 1.25.56 1.25 1.25v8.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z" clipRule="evenodd"/></svg>
 const SystemIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M2.5 4.5A1.5 1.5 0 0 1 4 3h12a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 16 9H4a1.5 1.5 0 0 1-1.5-1.5v-3ZM5 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM2.5 12.5A1.5 1.5 0 0 1 4 11h12a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 16 17H4a1.5 1.5 0 0 1-1.5-1.5v-3ZM5 14a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/></svg>
 const DbIcon      = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 3C6.13 3 3 4.12 3 5.5S6.13 8 10 8s7-1.12 7-2.5S13.87 3 10 3Z"/><path d="M3 8.5v2C3 11.88 6.13 13 10 13s7-1.12 7-2.5v-2C15.6 9.64 13 10 10 10S4.4 9.64 3 8.5Z"/><path d="M3 12.5v2C3 15.88 6.13 17 10 17s7-1.12 7-2.5v-2c-1.4 1.36-4 2-7 2s-5.6-.64-7-2Z"/></svg>
+const LimitsIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M2 10a8 8 0 1 1 16 0 8 8 0 0 1-16 0Zm8-5.75a.75.75 0 0 1 .75.75v4.638l3.096 1.788a.75.75 0 1 1-.75 1.299l-3.471-2.005A.75.75 0 0 1 9.25 10V5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd"/></svg>
 const UsersIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z"/></svg>
 const JobsIcon    = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M2 7a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7Zm2 3.25a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd"/></svg>
 const TrashIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 3.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd"/></svg>
@@ -1220,6 +1221,88 @@ function RequestsTab({ clerkId, api }: { clerkId: string; api: string }) {
 // ── Tab: System ───────────────────────────────────────────────────────────────
 type ServiceHealth = { name: string; url: string; up: boolean; status_code: number | null; latency_ms: number }
 
+// ── Tab: Tier limits ─────────────────────────────────────────────────────────
+type TierLimit = { tier: string; storage_limit_gb: number | null; weekly_job_limit: number | null }
+
+function LimitsTab({ clerkId, api }: { clerkId: string; api: string }) {
+  const [tiers, setTiers]   = useState<TierLimit[]>([])
+  const [edits, setEdits]   = useState<Record<string, { storage: string; jobs: string }>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState<string | null>(null)
+  const h = { 'x-clerk-id': clerkId }
+
+  const load = useCallback(() => {
+    fetch(`${api}/superadmin/tier-limits`, { headers: h })
+      .then(r => r.json())
+      .then(d => {
+        const ts: TierLimit[] = d.tiers || []
+        setTiers(ts)
+        const e: Record<string, { storage: string; jobs: string }> = {}
+        ts.forEach(t => { e[t.tier] = { storage: t.storage_limit_gb?.toString() ?? '', jobs: t.weekly_job_limit?.toString() ?? '' } })
+        setEdits(e)
+      })
+      .finally(() => setLoading(false))
+  }, [clerkId, api])
+
+  useEffect(() => { load() }, [load])
+
+  async function save(tier: string) {
+    setSaving(tier)
+    const e = edits[tier]
+    await fetch(`${api}/superadmin/tier-limits/${tier}`, {
+      method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        storage_limit_gb: e.storage.trim() === '' ? null : Number(e.storage),
+        weekly_job_limit: e.jobs.trim() === '' ? null : Number(e.jobs),
+      }),
+    })
+    load()
+    setSaving(null)
+  }
+
+  if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
+
+  return (
+    <div className="max-w-2xl">
+      <p className="text-xs text-gray-400 mb-4">
+        Leave a field blank for unlimited. These are the numbers shown to users on their dashboard and on the pricing page — display only for now, not yet enforced against uploads or job runs.
+      </p>
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-gray-100 bg-gray-50/60">
+            {['Tier', 'Storage (GB)', 'Jobs / week', ''].map(c => (
+              <th key={c} className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400">{c}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {tiers.map(t => (
+              <tr key={t.tier} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-3 font-medium text-gray-700 capitalize">{t.tier}</td>
+                <td className="px-4 py-3">
+                  <input value={edits[t.tier]?.storage ?? ''} placeholder="unlimited"
+                    onChange={e => setEdits(prev => ({ ...prev, [t.tier]: { ...prev[t.tier], storage: e.target.value } }))}
+                    className="w-28 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#6AA8A0]" />
+                </td>
+                <td className="px-4 py-3">
+                  <input value={edits[t.tier]?.jobs ?? ''} placeholder="unlimited"
+                    onChange={e => setEdits(prev => ({ ...prev, [t.tier]: { ...prev[t.tier], jobs: e.target.value } }))}
+                    className="w-28 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#6AA8A0]" />
+                </td>
+                <td className="px-4 py-3">
+                  <button onClick={() => save(t.tier)} disabled={saving === t.tier}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#3D7A72] text-white hover:bg-[#2A5750] transition-colors disabled:opacity-50">
+                    {saving === t.tier ? 'Saving...' : 'Save'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function SystemTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [services, setServices] = useState<ServiceHealth[]>([])
   const [loading, setLoading]   = useState(true)
@@ -1376,6 +1459,7 @@ const TABS = [
   { key: 'requests',  label: 'Requests',  icon: <CheckIcon /> },
   { key: 'system',    label: 'System',    icon: <SystemIcon /> },
   { key: 'database',  label: 'Database',  icon: <DbIcon /> },
+  { key: 'limits',    label: 'Limits',    icon: <LimitsIcon /> },
 ]
 
 export default function AdminPage() {
@@ -1445,6 +1529,7 @@ export default function AdminPage() {
       {tab === 'requests'  && <RequestsTab    clerkId={user!.id} api={API} />}
       {tab === 'system'    && <SystemTab      clerkId={user!.id} api={API} />}
       {tab === 'database'  && <DatabaseTab    clerkId={user!.id} api={API} />}
+      {tab === 'limits'    && <LimitsTab      clerkId={user!.id} api={API} />}
     </div>
   )
 }

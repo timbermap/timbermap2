@@ -18,6 +18,12 @@ def current_user(x_clerk_id: str = Header(..., alias="x-clerk-id")) -> str:
     return x_clerk_id
 
 
+@router.get("/tier-limits")
+def get_tier_limits_public(clerk_id: str = Depends(current_user)):
+    """Read-only for any signed-in user — powers the "your limits" panel."""
+    return {"tiers": database.get_tier_limits()}
+
+
 @router.get("/me")
 def get_my_account(clerk_id: str = Depends(current_user)):
     info = database.get_account_info(clerk_id)

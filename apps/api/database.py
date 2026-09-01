@@ -324,6 +324,30 @@ def superadmin_list_users():
     return [dict(r) for r in rows]
 
 
+def get_tier_limits():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT tier, storage_limit_gb, weekly_job_limit FROM tier_limits ORDER BY tier")
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return rows
+
+
+def set_tier_limit(tier: str, storage_limit_gb, weekly_job_limit):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE tier_limits SET storage_limit_gb = %s, weekly_job_limit = %s, updated_at = now()
+        WHERE tier = %s
+        RETURNING tier
+    """, (storage_limit_gb, weekly_job_limit, tier))
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row is not None
+
+
 def superadmin_set_plan(clerk_id: str, plan: str):
     conn = get_conn()
     cur = conn.cursor()
@@ -755,10 +779,25 @@ def get_account_info(clerk_id: str):
     for r in cur.fetchall():
         teammate_models.setdefault(r["clerk_id"], []).append(str(r["model_id"]))
 
+    # Account-wide usage — what actually counts against the plan's limits
+    cur.execute("""
+        SELECT
+            (
+                (SELECT COALESCE(SUM(i.filesize), 0) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(v.filesize), 0) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(jo.file_size_bytes), 0) FROM job_outputs jo JOIN jobs j ON j.id = jo.job_id JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = %(aid)s)
+            ) AS storage_bytes,
+            (SELECT COUNT(*) FROM jobs j JOIN users u2 ON u2.id = j.owner_id
+             WHERE u2.account_id = %(aid)s AND j.created_at > now() - interval '7 days') AS jobs_this_week
+    """, {"aid": me["account_id"]})
+    usage = dict(cur.fetchone())
+
     cur.close(); conn.close()
     return {
         "org_role": me["org_role"],
         "account_plan": me["plan"],
+        "storage_bytes": usage["storage_bytes"],
+        "jobs_this_week": usage["jobs_this_week"],
         "teammates": teammates,
         "account_models": account_models,
         "teammate_models": teammate_models,
