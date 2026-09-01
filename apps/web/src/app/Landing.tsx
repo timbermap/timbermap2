@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
+import { SignInButton, SignUpButton } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
 const MODELS = [
@@ -77,9 +78,13 @@ export default function Landing() {
             <a href="#features">Features</a>
             <a href="#models">Models</a>
             <a href="#contact">Contact</a>
-            <Link href="/sign-in" className="tm-nav-btn">Sign in</Link>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+              <button className="tm-nav-btn">Sign in</button>
+            </SignInButton>
           </div>
-          <Link href="/sign-in" className="tm-nav-btn tm-nav-btn-mobile">Sign in</Link>
+          <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+            <button className="tm-nav-btn tm-nav-btn-mobile">Sign in</button>
+          </SignInButton>
         </div>
       </nav>
 
@@ -104,7 +109,9 @@ export default function Landing() {
             Upload drone or aircraft imagery of your forest plantation. Get AI-powered results — tree crown counts, inter-row spacing, fault density maps — in under an hour.
           </p>
           <div className="tm-hero-ctas">
-            <Link href="/sign-up" className="tm-btn-primary">Get started →</Link>
+            <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
+              <button className="tm-btn-primary">Get started →</button>
+            </SignUpButton>
             <a href="#contact" className="tm-btn-outline">Talk to us</a>
           </div>
           <div className="tm-hero-stats">
@@ -259,7 +266,9 @@ export default function Landing() {
           </div>
           <p>© 2026 Forestech Uy</p>
           <div className="tm-footer-links">
-            <Link href="/sign-in" style={{background:'none',border:'none',cursor:'pointer',color:'inherit'}}>Sign in</Link>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+              <button style={{background:'none',border:'none',cursor:'pointer',color:'inherit'}}>Sign in</button>
+            </SignInButton>
             <a href="#contact">Contact</a>
           </div>
         </div>
