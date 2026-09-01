@@ -121,7 +121,7 @@ export default function PricingPage() {
       <section className="pr-contact" id="contact-note">
         <h3>Not sure which plan fits?</h3>
         <p>Tell us about your operation — plantation size, imagery source, team size — and we&apos;ll recommend a plan.</p>
-        <a href="mailto:sebastian@timbermap.com" className="pr-btn-primary">Email us →</a>
+        <Link href="/#contact" className="pr-btn-primary">Contact us →</Link>
       </section>
 
       <footer className="pr-footer">
