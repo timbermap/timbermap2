@@ -89,9 +89,9 @@ const BASEMAPS: BasemapDef[] = [
   { id: 'terrain', label: 'Terrain', icon: BasemapIcons.Terrain,
     style: makeBasemap('https://tile.opentopomap.org/{z}/{x}/{y}.png', '© OpenTopoMap') },
   { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
-    style: makeBasemap('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', '© CartoDB') },
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
   { id: 'light', label: 'Light', icon: BasemapIcons.Light,
-    style: makeBasemap('https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png', '© CartoDB') },
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
 ]
 
 const VECTOR_COLORS = ['#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']
