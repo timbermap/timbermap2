@@ -285,21 +285,34 @@ def superadmin_list_users():
     cur.execute("""
         SELECT
             u.id, u.clerk_id, u.email, u.username, u.is_superadmin, u.created_at,
-            COUNT(DISTINCT i.id)   AS image_count,
-            COUNT(DISTINCT v.id)   AS vector_count,
-            COUNT(DISTINCT j.id)   AS job_count,
-            COALESCE(SUM(i.filesize), 0) AS storage_bytes
+            u.plan,
+            (SELECT COUNT(*) FROM images  i WHERE i.owner_id = u.id) AS image_count,
+            (SELECT COUNT(*) FROM vectors v WHERE v.owner_id = u.id) AS vector_count,
+            (SELECT COUNT(*) FROM jobs    j WHERE j.owner_id = u.id) AS job_count,
+            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i WHERE i.owner_id = u.id) AS storage_bytes,
+            EXISTS (
+                SELECT 1 FROM user_model_permissions p
+                JOIN models m ON m.id = p.model_id
+                WHERE p.user_id = u.id AND m.is_free = false
+            ) AS has_paid_model
         FROM users u
-        LEFT JOIN images  i ON i.owner_id = u.id
-        LEFT JOIN vectors v ON v.owner_id = u.id
-        LEFT JOIN jobs    j ON j.owner_id = u.id
-        GROUP BY u.id
         ORDER BY u.created_at DESC
     """)
     rows = cur.fetchall()
     cur.close()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def superadmin_set_plan(clerk_id: str, plan: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET plan = %s WHERE clerk_id = %s RETURNING id", (plan, clerk_id))
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row is not None
 
 def superadmin_get_user_detail(clerk_id: str):
     conn = get_conn()
@@ -346,7 +359,7 @@ def superadmin_get_user_detail(clerk_id: str):
 
     # Assigned models
     cur.execute("""
-        SELECT m.id, m.name, m.slug, m.pipeline_type, m.is_active,
+        SELECT m.id, m.name, m.slug, m.pipeline_type, m.is_active, m.is_free,
                p.granted_at, p.granted_by, p.config_override, p.max_runs_month
         FROM models m
         JOIN user_model_permissions p ON p.model_id = m.id

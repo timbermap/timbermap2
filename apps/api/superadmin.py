@@ -49,6 +49,9 @@ class GrantModelRequest(BaseModel):
 class SetSuperadminRequest(BaseModel):
     is_superadmin: bool
 
+class SetPlanRequest(BaseModel):
+    is_custom: bool
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @router.get("/health")
@@ -243,6 +246,15 @@ def set_superadmin(target_clerk_id: str, req: SetSuperadminRequest, _: str = Dep
     row = cur.fetchone(); conn.commit(); cur.close(); conn.close()
     if not row: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "is_superadmin": req.is_superadmin}
+
+@router.put("/users/{target_clerk_id}/plan")
+def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require_superadmin)):
+    """Tiers: basic (default) and active (has a paid model) are computed automatically
+    from model access. 'custom' is the only manually-assigned override."""
+    plan = "custom" if req.is_custom else "free"
+    ok = database.superadmin_set_plan(target_clerk_id, plan)
+    if not ok: raise HTTPException(404, "User not found")
+    return {"updated": True, "clerk_id": target_clerk_id, "plan": plan}
 
 # ── Jobs (admin) ──────────────────────────────────────────────────────────────
 

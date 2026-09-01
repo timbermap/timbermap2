@@ -29,13 +29,29 @@ type Artifact = {
 type User = {
   id: string; clerk_id: string; email: string; username: string
   is_superadmin: boolean; created_at: string
+  plan: string; has_paid_model: boolean
   image_count: number; vector_count: number; job_count: number
   storage_bytes: number
 }
 type UserDetail = User & {
   stats: Record<string,number>
-  models: { id: string; name: string; pipeline_type: string; granted_at: string }[]
+  models: { id: string; name: string; pipeline_type: string; is_free: boolean; granted_at: string }[]
   recent_jobs: { id: string; type: string; status: string; model_name?: string; created_at: string }[]
+}
+
+// Tier is mostly computed, not stored: 'custom' is the only manual override
+// (users.plan = 'custom'); otherwise it's 'active' iff the user has a paid
+// model, else 'basic'. Keeps the tier from ever drifting out of sync with
+// what admins actually granted on the Models tab.
+function userTier(u: { plan: string; has_paid_model?: boolean }, hasPaidModel?: boolean): 'custom' | 'active' | 'basic' {
+  if (u.plan === 'custom') return 'custom'
+  return (hasPaidModel ?? u.has_paid_model) ? 'active' : 'basic'
+}
+const tierLabel: Record<string, string> = { custom: 'Custom', active: 'Active', basic: 'Basic' }
+const tierClass: Record<string, string> = {
+  custom: 'bg-violet-50 text-violet-600 border-violet-200',
+  active: 'bg-[#EEF7F6] text-[#3D7A72] border-[#A0CECC]',
+  basic:  'bg-gray-100 text-gray-500 border-gray-200',
 }
 type AdminJob = {
   id: string; type: string; status: string; message: string | null
@@ -517,6 +533,19 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     setSelected(d)
   }
 
+  async function toggleCustomPlan(user: UserDetail) {
+    const isCustom = user.plan === 'custom'
+    if (!confirm(`${isCustom ? 'Remove custom tier from' : 'Mark'} ${user.email}${isCustom ? '' : ' as custom tier'}?`)) return
+    await fetch(`${api}/superadmin/users/${user.clerk_id}/plan`, {
+      method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_custom: !isCustom }),
+    })
+    const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
+    setSelected(d)
+    const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
+    setUsers(ul.users || [])
+  }
+
   if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
 
   return (
@@ -537,6 +566,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   <p className="font-medium text-gray-900 text-sm truncate max-w-[150px]">{u.email}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     {u.is_superadmin && <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">admin</span>}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier(u)]}`}>{tierLabel[userTier(u)]}</span>
                     <span className="text-xs text-gray-400">{u.username}</span>
                   </div>
                 </td>
@@ -559,17 +589,32 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-semibold text-gray-900">{selected.email}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">{selected.email}</p>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier(selected, selected.models.some(m => !m.is_free))]}`}>
+                      {tierLabel[userTier(selected, selected.models.some(m => !m.is_free))]}
+                    </span>
+                  </div>
                   <p className="text-xs text-gray-400 mt-0.5">Joined {fmtDate(selected.created_at)}</p>
                 </div>
-                <button onClick={() => toggleSuperadmin(selected)}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
-                    selected.is_superadmin
-                      ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
-                      : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
-                  }`}>
-                  {selected.is_superadmin ? '⚡ Superadmin' : 'Make admin'}
-                </button>
+                <div className="flex flex-col items-end gap-1.5">
+                  <button onClick={() => toggleSuperadmin(selected)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
+                      selected.is_superadmin
+                        ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
+                    }`}>
+                    {selected.is_superadmin ? '⚡ Superadmin' : 'Make admin'}
+                  </button>
+                  <button onClick={() => toggleCustomPlan(selected)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
+                      selected.plan === 'custom'
+                        ? 'bg-violet-50 text-violet-600 border-violet-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200'
+                    }`}>
+                    {selected.plan === 'custom' ? '✦ Custom tier' : 'Mark custom'}
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
