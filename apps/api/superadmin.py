@@ -398,42 +398,77 @@ def hard_delete_job(job_id: str, _: str = Depends(require_superadmin)):
 
 @router.post("/jobs/{job_id}/retry")
 def retry_job(job_id: str, _: str = Depends(require_superadmin)):
-    """Reset a failed/cancelled job to queued and re-enqueue it."""
-    from tasks import enqueue_ml_job, enqueue_raster_analysis
+    """Reset a failed/cancelled/stuck job to queued and re-enqueue it — for
+    whatever it actually is, not just model-driven (ML/raster-analysis) jobs."""
+    from tasks import (
+        enqueue_ml_job, enqueue_raster_analysis,
+        enqueue_raster_ingest, enqueue_vector_ingest,
+        enqueue_raster_transform, enqueue_vector_transform,
+    )
     conn = database.get_conn(); cur = conn.cursor()
     cur.execute("""
-        SELECT j.*, m.type AS model_type FROM jobs j
+        SELECT j.*, m.type AS model_type, u.clerk_id AS owner_clerk_id
+        FROM jobs j
         LEFT JOIN models m ON m.id = j.model_id
+        JOIN users u ON u.id = j.owner_id
         WHERE j.id = %s
     """, (job_id,))
     job = cur.fetchone()
     if not job:
         cur.close(); conn.close()
         raise HTTPException(404, "Job not found")
-    # Reset status
     cur.execute("""
         UPDATE jobs SET status='queued', started_at=NULL, finished_at=NULL, message=NULL
         WHERE id=%s
     """, (job_id,))
     conn.commit(); cur.close(); conn.close()
-    # Re-enqueue based on model type
-    params = job.get("params") or {}
-    if isinstance(params, str):
-        try: params = json.loads(params)
-        except: params = {}
-    model_type = job.get("model_type") or "ml"
-    if model_type == "raster":
-        enqueue_raster_analysis(
-            job_id=job_id, model_id=str(job["model_id"]),
-            image_id=str(job["input_image_id"]), params=params,
+
+    input_ref = job.get("input_ref") or {}
+    clerk_id = job["owner_clerk_id"]
+    job_type = job["type"]
+
+    if job_type == "raster_ingest":
+        enqueue_raster_ingest(
+            job_id=job_id, image_id=input_ref.get("image_id"),
+            gcs_path=input_ref.get("gcs_path"), filename=input_ref.get("filename"),
+            clerk_id=clerk_id,
+        )
+    elif job_type == "vector_ingest":
+        enqueue_vector_ingest(
+            job_id=job_id, vector_id=input_ref.get("vector_id"),
+            gcs_path=input_ref.get("gcs_path"), filename=input_ref.get("filename"),
+        )
+    elif job_type == "raster_transform":
+        res_m = input_ref.get("new_resolution_x") or input_ref.get("new_resolution_y")
+        enqueue_raster_transform(
+            job_id=job_id, image_id=input_ref.get("image_id"),
+            target_epsg=input_ref.get("new_epsg"), target_resolution_m=res_m,
+            clerk_id=clerk_id,
+        )
+    elif job_type == "vector_transform":
+        enqueue_vector_transform(
+            job_id=job_id, vector_id=input_ref.get("vector_id"),
+            target_epsg=input_ref.get("new_epsg"),
         )
     else:
-        enqueue_ml_job(
-            job_id=job_id, model_id=str(job["model_id"]),
-            image_id=str(job["input_image_id"]),
-            vector_id=str(job["input_vector_id"]) if job.get("input_vector_id") else None,
-            params=params,
-        )
+        # Model-driven job: ML inference or raster analysis (e.g. gap_detection)
+        params = job.get("input_params") or {}
+        if isinstance(params, str):
+            try: params = json.loads(params)
+            except Exception: params = {}
+        model_type = job.get("model_type") or "ml"
+        if model_type == "raster":
+            enqueue_raster_analysis(
+                job_id=job_id, model_id=str(job["model_id"]),
+                image_id=str(job["input_image_id"]), params=params, clerk_id=clerk_id,
+            )
+        else:
+            enqueue_ml_job(
+                job_id=job_id, model_id=str(job["model_id"]),
+                image_id=str(job["input_image_id"]),
+                vector_id=str(job["input_vector_id"]) if job.get("input_vector_id") else None,
+                params=params,
+            )
     return {"retried": True, "job_id": job_id}
 
 # ── Images (admin) ────────────────────────────────────────────────────────────
