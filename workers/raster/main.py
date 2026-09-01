@@ -10,6 +10,7 @@ import logging
 import tempfile
 import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -533,12 +534,16 @@ def _do_transform(job: TransformJob):
 
 
 @app.post("/transform")
-async def transform_raster(job: TransformJob, background_tasks: BackgroundTasks):
-    """Accept immediately — Cloud Tasks gets 200 right away, no 30-min timeout."""
-    update_job(job.job_id, "running", "Accepted — processing in background...")
-    publish_status(job.job_id, "running", "Accepted — processing in background...")
-    background_tasks.add_task(_do_transform, job)
-    return {"status": "accepted"}
+async def transform_raster(job: TransformJob):
+    """Runs synchronously within the request — Cloud Run's 3600s timeout on this
+    service comfortably covers a warp+COG pass. BackgroundTasks looked async but
+    Cloud Run can scale the instance to zero the moment the HTTP response is
+    sent (it only sees an idle instance, not a task still running inside it),
+    silently killing the job mid-transform and leaving it stuck in "running"
+    forever. Cloud Tasks' dispatch_deadline (enqueue_raster_transform) is set
+    to cover this same window so it doesn't consider the call itself timed out."""
+    await run_in_threadpool(_do_transform, job)
+    return {"status": "done"}
 
 
 # ── Gap detection ─────────────────────────────────────────────────────────────

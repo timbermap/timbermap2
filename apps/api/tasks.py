@@ -101,7 +101,12 @@ def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, targe
                     "service_account_email": "timbermap-api@timbermap-prod.iam.gserviceaccount.com",
                     "audience": worker_url,
                 },
-            }
+            },
+            # /transform now runs synchronously and can take a while on large
+            # rasters — give Cloud Tasks the max allowed dispatch deadline
+            # instead of its 10-minute default, so it doesn't consider the
+            # call itself failed while the worker is still legitimately busy.
+            "dispatch_deadline": {"seconds": 1800},
         }
 
         client.create_task(parent=parent, task=task)
