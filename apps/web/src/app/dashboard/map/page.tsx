@@ -42,10 +42,10 @@ type AOIFeature = {
   area_km2: number
 }
 
-function makeBasemap(tileUrl: string, attribution: string): StyleSpecification {
+function makeBasemap(tileUrl: string, attribution: string, maxzoom = 19): StyleSpecification {
   return {
     version: 8,
-    sources: { basemap: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution } },
+    sources: { basemap: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution, maxzoom } },
     layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }]
   }
 }
@@ -83,15 +83,15 @@ const BasemapIcons = {
 
 const BASEMAPS: BasemapDef[] = [
   { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
-    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri', 16) },
   { id: 'satellite', label: 'Satellite', icon: BasemapIcons.Satellite,
-    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri') },
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri', 18) },
   { id: 'osm', label: 'Streets', icon: BasemapIcons.Streets,
-    style: makeBasemap('https://tile.openstreetmap.org/{z}/{x}/{y}.png', '© OpenStreetMap contributors') },
+    style: makeBasemap('https://tile.openstreetmap.org/{z}/{x}/{y}.png', '© OpenStreetMap contributors', 19) },
   { id: 'terrain', label: 'Terrain', icon: BasemapIcons.Terrain,
-    style: makeBasemap('https://tile.opentopomap.org/{z}/{x}/{y}.png', '© OpenTopoMap') },
+    style: makeBasemap('https://tile.opentopomap.org/{z}/{x}/{y}.png', '© OpenTopoMap', 17) },
   { id: 'light', label: 'Light', icon: BasemapIcons.Light,
-    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri') },
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri', 16) },
 ]
 
 const VECTOR_COLORS = ['#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']

@@ -303,7 +303,11 @@ def superadmin_list_users():
             (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS image_count,
             (SELECT COUNT(*) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = u.account_id) AS vector_count,
             (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = u.account_id) AS job_count,
-            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS storage_bytes,
+            (
+                (SELECT COALESCE(SUM(i.filesize), 0) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) +
+                (SELECT COALESCE(SUM(v.filesize), 0) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = u.account_id) +
+                (SELECT COALESCE(SUM(jo.file_size_bytes), 0) FROM job_outputs jo JOIN jobs j ON j.id = jo.job_id JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = u.account_id)
+            ) AS storage_bytes,
             EXISTS (
                 SELECT 1 FROM user_model_permissions p
                 JOIN models m ON m.id = p.model_id
@@ -361,7 +365,11 @@ def superadmin_get_user_detail(clerk_id: str):
             (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'done')    AS jobs_done,
             (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'failed')  AS jobs_failed,
             (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'running') AS jobs_running,
-            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i WHERE i.owner_id = %(uid)s) AS storage_bytes
+            (
+                (SELECT COALESCE(SUM(i.filesize), 0) FROM images  i WHERE i.owner_id = %(uid)s) +
+                (SELECT COALESCE(SUM(v.filesize), 0) FROM vectors v WHERE v.owner_id = %(uid)s) +
+                (SELECT COALESCE(SUM(jo.file_size_bytes), 0) FROM job_outputs jo JOIN jobs j ON j.id = jo.job_id WHERE j.owner_id = %(uid)s)
+            ) AS storage_bytes
     """, {"uid": owner_id})
     user['stats'] = dict(cur.fetchone())
 
@@ -371,7 +379,11 @@ def superadmin_get_user_detail(clerk_id: str):
         SELECT
             (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) AS image_count,
             (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = %(aid)s) AS job_count,
-            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) AS storage_bytes
+            (
+                (SELECT COALESCE(SUM(i.filesize), 0) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(v.filesize), 0) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(jo.file_size_bytes), 0) FROM job_outputs jo JOIN jobs j ON j.id = jo.job_id JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = %(aid)s)
+            ) AS storage_bytes
     """, {"aid": account_id})
     user['account_stats'] = dict(cur.fetchone())
 

@@ -58,10 +58,18 @@ const tierClass: Record<string, string> = {
 }
 // Placeholder defaults — no enforcement exists yet, this is just visibility.
 // Adjust these once real plan limits are decided.
+// Basic: 10GB storage, max 5 processing jobs/week — confirmed real numbers.
+// Custom: unlimited/negotiated per account, also confirmed. Active is still
+// a placeholder pending a number from the business side.
 const TIER_STORAGE_LIMIT_BYTES: Record<string, number | null> = {
-  basic: 5e9,     // 5 GB
-  active: 50e9,   // 50 GB
+  basic: 10e9,    // 10 GB
+  active: 50e9,   // 50 GB — placeholder, not yet confirmed
   custom: null,   // unlimited / negotiated per account
+}
+const TIER_WEEKLY_JOBS: Record<string, number | null> = {
+  basic: 5,
+  active: null,
+  custom: null,
 }
 function StorageBar({ bytes, tier }: { bytes: number; tier: string }) {
   const limit = TIER_STORAGE_LIMIT_BYTES[tier]
@@ -679,6 +687,13 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                 bytes={selected.account_stats.storage_bytes || 0}
                 tier={userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))}
               />
+              {(() => {
+                const tier = userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))
+                const weekly = TIER_WEEKLY_JOBS[tier]
+                return weekly !== null && weekly !== undefined ? (
+                  <p className="text-xs text-gray-300 mt-2">Limit: {weekly} jobs/week (not yet enforced)</p>
+                ) : null
+              })()}
             </div>
 
             {/* Team */}
