@@ -218,7 +218,7 @@ def delete_user(clerk_id: str):
         delete_gcs_blobs(f"users/{clerk_id}/")
         drop_postgis_schema(f"user_{clerk_id.replace('-', '_')}")
 
-        cur.execute("DELETE FROM user_model_permissions WHERE clerk_id = %s", (clerk_id,))
+        cur.execute("DELETE FROM user_model_permissions WHERE user_id = %s", (owner_id,))
         cur.execute("""
             DELETE FROM job_outputs
             WHERE job_id IN (SELECT id FROM jobs WHERE owner_id = %s)
