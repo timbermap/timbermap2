@@ -549,36 +549,41 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Resources */}
+        {/* Plan usage */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Resources</p>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-              isPro ? 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]' : 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
-            }`}>{isPro ? 'Pro' : 'Free'}</span>
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Your plan</p>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${
+              tier === 'custom' ? 'bg-violet-50 text-violet-600 border border-violet-200'
+              : tier === 'active' ? 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]'
+              : 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
+            }`}>{tier}</span>
           </div>
-          <div className="space-y-4">
-            <ResourceRow label="Images" used={readyImages.length} limit={null}/>
-            <ResourceRow label="Vectors" used={vectors.length} limit={null}/>
-            <ResourceRow label="Active models" used={activeModels.length} limit={null}/>
-            <ResourceRow label="Ha processed" used={totalHa > 0 ? formatHa(totalHa) : 0} limit={null} unit="ha"/>
-            {accountInfo && (
-              <>
-                <div className="pt-2 border-t border-gray-50">
-                  <ResourceRow
-                    label="Storage"
-                    used={fmtBytes(accountInfo.storage_bytes)}
-                    limit={storageLimitBytes !== null ? fmtBytes(storageLimitBytes) : null}
-                    pct={storageLimitBytes ? (accountInfo.storage_bytes / storageLimitBytes) * 100 : 0}
-                  />
-                </div>
-                <ResourceRow
-                  label="Jobs this week"
-                  used={accountInfo.jobs_this_week}
-                  limit={jobsLimit}
-                />
-              </>
-            )}
+
+          {accountInfo && (
+            <div className="space-y-5">
+              <UsageBar
+                label="Storage"
+                usedLabel={fmtBytes(accountInfo.storage_bytes)}
+                limitLabel={storageLimitBytes !== null ? fmtBytes(storageLimitBytes) : 'Unlimited'}
+                pct={storageLimitBytes ? (accountInfo.storage_bytes / storageLimitBytes) * 100 : 0}
+                unlimited={storageLimitBytes === null}
+              />
+              <UsageBar
+                label="Jobs this week"
+                usedLabel={String(accountInfo.jobs_this_week)}
+                limitLabel={jobsLimit !== null ? String(jobsLimit) : 'Unlimited'}
+                pct={jobsLimit ? (accountInfo.jobs_this_week / jobsLimit) * 100 : 0}
+                unlimited={jobsLimit === null}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-gray-50">
+            <MiniStat label="Images" value={readyImages.length}/>
+            <MiniStat label="Vectors" value={vectors.length}/>
+            <MiniStat label="Active models" value={activeModels.length}/>
+            <MiniStat label="Ha processed" value={totalHa > 0 ? formatHa(totalHa) : 0}/>
           </div>
         </div>
 
@@ -587,23 +592,34 @@ export default function Dashboard() {
   )
 }
 
-function ResourceRow({ label, used, limit, unit, pct }: {
-  label: string; used: number | string; limit: number | string | null; unit?: string; pct?: number
+function UsageBar({ label, usedLabel, limitLabel, pct, unlimited }: {
+  label: string; usedLabel: string; limitLabel: string; pct: number; unlimited: boolean
 }) {
-  const width = pct !== undefined
-    ? Math.min(100, pct)
-    : (typeof limit === 'number' && limit > 0 ? Math.min(100, (Number(used) / limit) * 100) : 0)
+  const width = Math.min(100, Math.max(0, pct))
+  const over = pct > 100
+  const barColor = unlimited ? 'bg-[#A0CECC]' : over ? 'bg-red-400' : pct >= 90 ? 'bg-[#D9A441]' : 'bg-[#3D7A72]'
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-gray-500">{label}</span>
-        <span className="text-xs font-medium text-gray-700">
-          {used}{unit ? ` ${unit}` : ''} {limit !== null ? `/ ${limit}` : ''}
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-sm text-gray-600 font-medium">{label}</span>
+        <span className="text-sm tabular-nums">
+          <span className="font-semibold text-gray-800">{usedLabel}</span>
+          <span className="text-gray-400"> / {limitLabel}</span>
         </span>
       </div>
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-full bg-[#A0CECC] rounded-full transition-all" style={{ width: `${width}%` }} />
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: unlimited ? '4px' : `${width}%` }} />
       </div>
+      {over && <p className="text-xs text-red-500 mt-1">Over your plan limit</p>}
+    </div>
+  )
+}
+
+function MiniStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="bg-gray-50 rounded-xl px-3.5 py-3">
+      <p className="text-lg font-light text-[#1C1C1C] tabular-nums leading-none mb-1">{value}</p>
+      <p className="text-xs text-gray-400">{label}</p>
     </div>
   )
 }
