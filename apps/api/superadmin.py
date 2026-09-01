@@ -105,6 +105,19 @@ class EditJobRequest(BaseModel):
 def superadmin_health(_: str = Depends(require_superadmin)):
     return {"status": "ok", "service": "superadmin"}
 
+@router.get("/am-i-admin")
+def am_i_admin(x_clerk_id: str = Header(None, alias="x-clerk-id")):
+    """Always 200 — for routine 'should I show the admin menu link?' checks
+    on every page load. Unlike /health, never 403s a normal user, so it
+    doesn't spam the console with an 'error' for the common case."""
+    if not x_clerk_id:
+        return {"is_superadmin": False}
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("SELECT is_superadmin FROM users WHERE clerk_id = %s", (x_clerk_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return {"is_superadmin": bool(row and row["is_superadmin"])}
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")

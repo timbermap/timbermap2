@@ -29,8 +29,9 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (!isLoaded || !user) return
-    fetch(`${API}/superadmin/health`, { headers: { 'x-clerk-id': user.id } })
-      .then(r => { if (r.ok) setIsSuperadmin(true) })
+    fetch(`${API}/superadmin/am-i-admin`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.is_superadmin) setIsSuperadmin(true) })
       .catch(() => {})
     fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
       .then(r => r.ok ? r.json() : null)
