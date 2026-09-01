@@ -105,6 +105,7 @@ type AdminVector = {
 const ChartIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M15.5 2A1.5 1.5 0 0 0 14 3.5v13a1.5 1.5 0 0 0 3 0v-13A1.5 1.5 0 0 0 15.5 2ZM9.5 6A1.5 1.5 0 0 0 8 7.5v9a1.5 1.5 0 0 0 3 0v-9A1.5 1.5 0 0 0 9.5 6ZM3.5 10A1.5 1.5 0 0 0 2 11.5v5a1.5 1.5 0 0 0 3 0v-5A1.5 1.5 0 0 0 3.5 10Z"/></svg>
 const CpuIcon     = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M14 6H6v8h8V6Z"/><path fillRule="evenodd" d="M9.25 3V1.75a.75.75 0 0 1 1.5 0V3h1.5V1.75a.75.75 0 0 1 1.5 0V3h.5A2.75 2.75 0 0 1 17 5.75v.5h1.25a.75.75 0 0 1 0 1.5H17v1.5h1.25a.75.75 0 0 1 0 1.5H17v1.5h1.25a.75.75 0 0 1 0 1.5H17v.5A2.75 2.75 0 0 1 14.25 17h-.5v1.25a.75.75 0 0 1-1.5 0V17h-1.5v1.25a.75.75 0 0 1-1.5 0V17h-1.5v1.25a.75.75 0 0 1-1.5 0V17h-.5A2.75 2.75 0 0 1 3 14.25v-.5H1.75a.75.75 0 0 1 0-1.5H3v-1.5H1.75a.75.75 0 0 1 0-1.5H3v-1.5H1.75a.75.75 0 0 1 0-1.5H3v-.5A2.75 2.75 0 0 1 5.75 3h.5V1.75a.75.75 0 0 1 1.5 0V3h1.5ZM4.5 5.75c0-.69.56-1.25 1.25-1.25h8.5c.69 0 1.25.56 1.25 1.25v8.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z" clipRule="evenodd"/></svg>
 const SystemIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M2.5 4.5A1.5 1.5 0 0 1 4 3h12a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 16 9H4a1.5 1.5 0 0 1-1.5-1.5v-3ZM5 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM2.5 12.5A1.5 1.5 0 0 1 4 11h12a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 16 17H4a1.5 1.5 0 0 1-1.5-1.5v-3ZM5 14a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/></svg>
+const DbIcon      = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M10 3C6.13 3 3 4.12 3 5.5S6.13 8 10 8s7-1.12 7-2.5S13.87 3 10 3Z"/><path d="M3 8.5v2C3 11.88 6.13 13 10 13s7-1.12 7-2.5v-2C15.6 9.64 13 10 10 10S4.4 9.64 3 8.5Z"/><path d="M3 12.5v2C3 15.88 6.13 17 10 17s7-1.12 7-2.5v-2c-1.4 1.36-4 2-7 2s-5.6-.64-7-2Z"/></svg>
 const UsersIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z"/></svg>
 const JobsIcon    = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M2 7a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7Zm2 3.25a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Zm0 3.5a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd"/></svg>
 const TrashIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 3.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd"/></svg>
@@ -1255,6 +1256,100 @@ function SystemTab({ clerkId, api }: { clerkId: string; api: string }) {
   )
 }
 
+// ── Tab: Database ─────────────────────────────────────────────────────────────
+type DbTable = { name: string; row_count: number }
+type DbRows = { table: string; columns: string[]; rows: Record<string, unknown>[] }
+
+function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
+  const [tables, setTables]     = useState<DbTable[]>([])
+  const [selected, setSelected] = useState<string | null>(null)
+  const [data, setData]         = useState<DbRows | null>(null)
+  const [loadingTables, setLoadingTables] = useState(true)
+  const [loadingRows, setLoadingRows]     = useState(false)
+  const h = { 'x-clerk-id': clerkId }
+
+  useEffect(() => {
+    fetch(`${api}/superadmin/db/tables`, { headers: h })
+      .then(r => r.json())
+      .then(d => {
+        const ts: DbTable[] = d.tables || []
+        setTables(ts)
+        if (ts.length > 0) setSelected(ts[0].name)
+      })
+      .finally(() => setLoadingTables(false))
+  }, [clerkId, api])
+
+  useEffect(() => {
+    if (!selected) return
+    setLoadingRows(true)
+    fetch(`${api}/superadmin/db/tables/${selected}?limit=200`, { headers: h })
+      .then(r => r.json())
+      .then(setData)
+      .finally(() => setLoadingRows(false))
+  }, [selected, clerkId, api])
+
+  function cell(v: unknown): string {
+    if (v === null || v === undefined) return '—'
+    if (typeof v === 'object') return JSON.stringify(v)
+    return String(v)
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {/* Table list */}
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loadingTables ? (
+          <div className="flex items-center gap-2 text-gray-400 py-8 px-4 text-sm"><SpinIcon />Loading...</div>
+        ) : (
+          <div className="py-1">
+            {tables.map(t => (
+              <button key={t.name} onClick={() => setSelected(t.name)}
+                className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors ${
+                  selected === t.name ? 'bg-[#EEF7F6] text-[#3D7A72] font-medium' : 'text-gray-600 hover:bg-gray-50'
+                }`}>
+                <span className="truncate">{t.name}</span>
+                <span className="text-xs text-gray-300 tabular-nums">{t.row_count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Rows */}
+      <div className="lg:col-span-4 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loadingRows || !data ? (
+          <div className="flex items-center gap-2 text-gray-400 py-8 px-4 text-sm"><SpinIcon />Loading...</div>
+        ) : (
+          <div className="overflow-auto max-h-[70vh]">
+            <table className="text-sm w-full">
+              <thead className="sticky top-0 bg-gray-50/95 backdrop-blur">
+                <tr className="border-b border-gray-100">
+                  {data.columns.map(c => (
+                    <th key={c} className="text-left px-3 py-2.5 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.length === 0 ? (
+                  <tr><td colSpan={data.columns.length} className="px-4 py-8 text-center text-sm text-gray-300">Empty table</td></tr>
+                ) : data.rows.map((row, i) => (
+                  <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+                    {data.columns.map(c => (
+                      <td key={c} className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[240px] truncate" title={cell(row[c])}>
+                        {cell(row[c])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 const TABS = [
   { key: 'overview',  label: 'Overview',  icon: <ChartIcon /> },
@@ -1265,6 +1360,7 @@ const TABS = [
   { key: 'vectors',   label: 'Vectors',   icon: <VectorsIcon /> },
   { key: 'requests',  label: 'Requests',  icon: <CheckIcon /> },
   { key: 'system',    label: 'System',    icon: <SystemIcon /> },
+  { key: 'database',  label: 'Database',  icon: <DbIcon /> },
 ]
 
 export default function AdminPage() {
@@ -1333,6 +1429,7 @@ export default function AdminPage() {
       {tab === 'vectors'   && <AllVectorsTab  clerkId={user!.id} api={API} />}
       {tab === 'requests'  && <RequestsTab    clerkId={user!.id} api={API} />}
       {tab === 'system'    && <SystemTab      clerkId={user!.id} api={API} />}
+      {tab === 'database'  && <DatabaseTab    clerkId={user!.id} api={API} />}
     </div>
   )
 }

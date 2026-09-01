@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from webhooks import router as webhook_router
 from stats import router as stats_router
 from superadmin import router as superadmin_router, models_router
+from account import router as account_router
 
 from database import (
     ensure_user, get_user_id, get_conn,
@@ -53,6 +54,7 @@ app.include_router(webhook_router)
 app.include_router(stats_router, prefix="/stats", tags=["stats"])
 app.include_router(superadmin_router)
 app.include_router(models_router)
+app.include_router(account_router)
 
 CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-tjrp7tcqaa-uc.a.run.app")
 CLEANUP_INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")

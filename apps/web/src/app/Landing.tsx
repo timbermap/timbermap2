@@ -77,6 +77,7 @@ export default function Landing() {
           <div className="tm-nav-links">
             <a href="#features">Features</a>
             <a href="#models">Models</a>
+            <Link href="/pricing">Pricing</Link>
             <a href="#contact">Contact</a>
             <SignInButton mode="modal" forceRedirectUrl="/dashboard">
               <button className="tm-nav-btn">Sign in</button>

@@ -688,6 +688,116 @@ def superadmin_delete_job_output(output_id: str):
     return gcs_path
 
 
+def get_account_info(clerk_id: str):
+    """Self-service view of the caller's own account: who's on it, what plan,
+    and (if the caller is org:admin) what models they can hand out."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.id, u.account_id, u.org_role, a.plan
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return None
+    me = dict(me)
+
+    cur.execute("""
+        SELECT clerk_id, email, username, org_role
+        FROM users WHERE account_id = %s AND id != %s
+        ORDER BY created_at
+    """, (me["account_id"], me["id"]))
+    teammates = [dict(r) for r in cur.fetchall()]
+
+    # The account's own models (what an admin can hand out to teammates) —
+    # union of every model granted to any current admin on the account.
+    cur.execute("""
+        SELECT DISTINCT m.id, m.name, m.pipeline_type
+        FROM user_model_permissions p
+        JOIN models m ON m.id = p.model_id
+        JOIN users u2 ON u2.id = p.user_id
+        WHERE u2.account_id = %s AND u2.org_role = 'admin' AND m.is_active = true
+    """, (me["account_id"],))
+    account_models = [dict(r) for r in cur.fetchall()]
+
+    # Per-teammate model access, so the UI can show checkboxes
+    cur.execute("""
+        SELECT u2.clerk_id, p.model_id
+        FROM user_model_permissions p
+        JOIN users u2 ON u2.id = p.user_id
+        WHERE u2.account_id = %s AND u2.id != %s
+    """, (me["account_id"], me["id"]))
+    teammate_models: dict = {}
+    for r in cur.fetchall():
+        teammate_models.setdefault(r["clerk_id"], []).append(str(r["model_id"]))
+
+    cur.close(); conn.close()
+    return {
+        "org_role": me["org_role"],
+        "account_plan": me["plan"],
+        "teammates": teammates,
+        "account_models": account_models,
+        "teammate_models": teammate_models,
+    }
+
+
+def admin_grant_model_to_teammate(admin_clerk_id: str, teammate_clerk_id: str, model_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, account_id, org_role FROM users WHERE clerk_id = %s", (admin_clerk_id,))
+    admin = cur.fetchone()
+    if not admin or admin["org_role"] != "admin":
+        cur.close(); conn.close()
+        return False, "Only an account admin can grant model access"
+
+    cur.execute("SELECT id, account_id FROM users WHERE clerk_id = %s", (teammate_clerk_id,))
+    teammate = cur.fetchone()
+    if not teammate or teammate["account_id"] != admin["account_id"]:
+        cur.close(); conn.close()
+        return False, "That user isn't on your account"
+
+    cur.execute(
+        "SELECT 1 FROM user_model_permissions WHERE user_id = %s AND model_id = %s",
+        (admin["id"], model_id),
+    )
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return False, "You don't have access to that model yourself"
+
+    cur.execute("""
+        INSERT INTO user_model_permissions (user_id, model_id, granted_by)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, model_id) DO NOTHING
+    """, (teammate["id"], model_id, admin_clerk_id))
+    conn.commit(); cur.close(); conn.close()
+    return True, None
+
+
+def admin_revoke_model_from_teammate(admin_clerk_id: str, teammate_clerk_id: str, model_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT account_id, org_role FROM users WHERE clerk_id = %s", (admin_clerk_id,))
+    admin = cur.fetchone()
+    if not admin or admin["org_role"] != "admin":
+        cur.close(); conn.close()
+        return False, "Only an account admin can revoke model access"
+
+    cur.execute("SELECT id, account_id FROM users WHERE clerk_id = %s", (teammate_clerk_id,))
+    teammate = cur.fetchone()
+    if not teammate or teammate["account_id"] != admin["account_id"]:
+        cur.close(); conn.close()
+        return False, "That user isn't on your account"
+
+    cur.execute(
+        "DELETE FROM user_model_permissions WHERE user_id = %s AND model_id = %s",
+        (teammate["id"], model_id),
+    )
+    conn.commit(); cur.close(); conn.close()
+    return True, None
+
+
 def delete_job(job_id: str, owner_id: str) -> list:
     """Deletes a job owned by owner_id. Returns list of gcs_paths for cleanup."""
     conn = get_conn()

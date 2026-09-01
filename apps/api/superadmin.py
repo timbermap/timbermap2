@@ -573,6 +573,54 @@ def admin_reprocess_vector(vector_id: str, _: str = Depends(require_superadmin))
 
 # ── System ────────────────────────────────────────────────────────────────────
 
+@router.get("/db/tables")
+def list_db_tables(_: str = Depends(require_superadmin)):
+    """Every table in the public schema, with row counts — lets the superadmin
+    browse practically anything in Postgres without needing psql access."""
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+    """)
+    tables = [r["table_name"] for r in cur.fetchall()]
+    result = []
+    for t in tables:
+        cur.execute(f'SELECT COUNT(*) AS n FROM "{t}"')
+        result.append({"name": t, "row_count": cur.fetchone()["n"]})
+    cur.close(); conn.close()
+    return {"tables": result}
+
+@router.get("/db/tables/{table_name}")
+def get_db_table_rows(table_name: str, limit: int = 200, _: str = Depends(require_superadmin)):
+    conn = database.get_conn(); cur = conn.cursor()
+    # Whitelist against the live schema — table_name is otherwise going
+    # straight into an identifier position in raw SQL below.
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name = %s
+    """, (table_name,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        raise HTTPException(404, "No such table")
+
+    limit = max(1, min(limit, 1000))
+    cur.execute(f'SELECT * FROM "{table_name}" ORDER BY 1 DESC LIMIT %s', (limit,))
+    rows = cur.fetchall()
+    columns = [d.name for d in cur.description]
+    cur.close(); conn.close()
+
+    def _jsonable(v):
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        return v
+
+    return {
+        "table": table_name,
+        "columns": columns,
+        "rows": [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows],
+    }
+
 @router.get("/system")
 def get_system_info(_: str = Depends(require_superadmin)):
     conn = database.get_conn(); cur = conn.cursor()
