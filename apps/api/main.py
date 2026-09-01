@@ -42,6 +42,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://timbermap.com",
+        "https://app.timbermap.com",
+        "https://new.timbermap.com",
         "https://timbermap-web-tjrp7tcqaa-uc.a.run.app",
         "https://timbermap-web-788407107542.us-central1.run.app",
     ],
