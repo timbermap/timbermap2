@@ -27,7 +27,7 @@ gcloud run deploy ${SERVICE} \
   --image ${IMAGE} \
   --region ${REGION} \
   --platform managed \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --port 8080 \
   --memory 2Gi \
   --cpu 2 \
@@ -38,6 +38,15 @@ gcloud run deploy ${SERVICE} \
   --add-cloudsql-instances ${PROJECT}:${REGION}:timbermap-db \
   --set-env-vars "GCP_PROJECT=${PROJECT},GCS_BUCKET=timbermap-data,DB_HOST=/cloudsql/${PROJECT}:${REGION}:timbermap-db,DB_NAME=timbermap,DB_USER=postgres,DB_PORT=5432" \
   --update-secrets="DB_PASSWORD=pg-password:latest"
+
+# Solo la API puede invocar este worker (Cloud Tasks manda un OIDC token
+# firmado por esta service account — ver apps/api/tasks.py). No público.
+echo ""
+echo "→ Configurando IAM..."
+gcloud run services add-iam-policy-binding ${SERVICE} \
+  --region ${REGION} \
+  --member="serviceAccount:timbermap-api@timbermap-prod.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
 
 echo ""
 echo "========================================"

@@ -35,7 +35,7 @@ gcloud run deploy ${SERVICE} \
   --image ${IMAGE} \
   --region ${REGION} \
   --platform managed \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --port 8080 \
   --memory 8Gi \
   --cpu 4 \
@@ -52,12 +52,13 @@ RASTER_URL=$(gcloud run services describe ${SERVICE} \
   --region ${REGION} \
   --format='value(status.url)')
 
-# Allow Cloud Tasks to invoke (no OIDC token configured in tasks.py)
+# Solo la API puede invocar este worker (Cloud Tasks manda un OIDC token
+# firmado por esta service account — ver apps/api/tasks.py). No público.
 echo ""
 echo "→ Configurando IAM..."
 gcloud run services add-iam-policy-binding ${SERVICE} \
   --region ${REGION} \
-  --member="allUsers" \
+  --member="serviceAccount:timbermap-api@timbermap-prod.iam.gserviceaccount.com" \
   --role="roles/run.invoker"
 
 echo ""

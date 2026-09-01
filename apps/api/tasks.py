@@ -60,6 +60,10 @@ def enqueue_vector_ingest(job_id: str, vector_id: str, gcs_path: str, filename: 
                 "url": f"{worker_url}/ingest",
                 "body": payload,
                 "headers": {"Content-Type": "application/json"},
+                "oidc_token": {
+                    "service_account_email": "timbermap-api@timbermap-prod.iam.gserviceaccount.com",
+                    "audience": worker_url,
+                },
             }
         }
 
@@ -93,6 +97,10 @@ def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, targe
                 "url": f"{worker_url}/transform",
                 "body": payload,
                 "headers": {"Content-Type": "application/json"},
+                "oidc_token": {
+                    "service_account_email": "timbermap-api@timbermap-prod.iam.gserviceaccount.com",
+                    "audience": worker_url,
+                },
             }
         }
 
@@ -124,6 +132,10 @@ def enqueue_vector_transform(job_id: str, vector_id: str, target_epsg: str):
                 "url": f"{worker_url}/transform",
                 "body": payload,
                 "headers": {"Content-Type": "application/json"},
+                "oidc_token": {
+                    "service_account_email": "timbermap-api@timbermap-prod.iam.gserviceaccount.com",
+                    "audience": worker_url,
+                },
             }
         }
 
@@ -203,6 +215,10 @@ def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: d
                 "url": f"{worker_url}/analyze/gaps",
                 "body": payload,
                 "headers": {"Content-Type": "application/json"},
+                "oidc_token": {
+                    "service_account_email": "timbermap-api@timbermap-prod.iam.gserviceaccount.com",
+                    "audience": worker_url,
+                },
             },
         }
 
