@@ -34,7 +34,10 @@ type User = {
   storage_bytes: number
 }
 type UserDetail = User & {
+  account_id: string; org_role: string | null; account_plan: string; clerk_org_id: string | null
   stats: Record<string,number>
+  account_stats: { image_count: number; job_count: number; storage_bytes: number }
+  teammates: { id: string; clerk_id: string; email: string; username: string; org_role: string | null }[]
   models: { id: string; name: string; pipeline_type: string; is_free: boolean; granted_at: string }[]
   recent_jobs: { id: string; type: string; status: string; model_name?: string; created_at: string }[]
 }
@@ -573,7 +576,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
   }
 
   async function toggleCustomPlan(user: UserDetail) {
-    const isCustom = user.plan === 'custom'
+    const isCustom = user.account_plan === 'custom'
     if (!confirm(`${isCustom ? 'Remove custom tier from' : 'Mark'} ${user.email}${isCustom ? '' : ' as custom tier'}?`)) return
     await fetch(`${api}/superadmin/users/${user.clerk_id}/plan`, {
       method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
@@ -630,8 +633,8 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-gray-900">{selected.email}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier(selected, selected.models.some(m => !m.is_free))]}`}>
-                      {tierLabel[userTier(selected, selected.models.some(m => !m.is_free))]}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))]}`}>
+                      {tierLabel[userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))]}
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">Joined {fmtDate(selected.created_at)}</p>
@@ -647,14 +650,15 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   </button>
                   <button onClick={() => toggleCustomPlan(selected)}
                     className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
-                      selected.plan === 'custom'
+                      selected.account_plan === 'custom'
                         ? 'bg-violet-50 text-violet-600 border-violet-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
                         : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200'
                     }`}>
-                    {selected.plan === 'custom' ? '✦ Custom tier' : 'Mark custom'}
+                    {selected.account_plan === 'custom' ? '✦ Custom tier' : 'Mark custom'}
                   </button>
                 </div>
               </div>
+              <p className="text-xs text-gray-300 mb-1.5">This user's own activity</p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {[
                   { label: 'Images', value: selected.stats.image_count },
@@ -667,11 +671,36 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-gray-300 mb-1.5">
+                Account total{selected.teammates.length > 0 ? ` (${selected.teammates.length + 1} people)` : ''}
+              </p>
               <StorageBar
-                bytes={selected.stats.storage_bytes || 0}
-                tier={userTier(selected, selected.models.some(m => !m.is_free))}
+                bytes={selected.account_stats.storage_bytes || 0}
+                tier={userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))}
               />
             </div>
+
+            {/* Team */}
+            {selected.teammates.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-3">
+                  Team {selected.org_role && <span className="normal-case text-gray-300">(this user is {selected.org_role})</span>}
+                </p>
+                <div className="space-y-2">
+                  {selected.teammates.map(t => (
+                    <div key={t.id} className="flex items-center justify-between py-1.5">
+                      <div>
+                        <p className="text-xs text-gray-700 font-medium">{t.email}</p>
+                        <p className="text-xs text-gray-400">{t.username}</p>
+                      </div>
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+                        {t.org_role || '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Model permissions */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">

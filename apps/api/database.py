@@ -280,22 +280,28 @@ def check_model_permission(user_id: str, model_id: str) -> bool:
 # ── Superadmin — Users ───────────────────────────────────────────────────────
 
 def superadmin_list_users():
+    """Each row is still one user, but the usage numbers (storage/counts/
+    has_paid_model) are rolled up across the whole account — teammates share
+    one quota/tier even though each keeps their own images/vectors/jobs."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
         SELECT
             u.id, u.clerk_id, u.email, u.username, u.is_superadmin, u.created_at,
-            u.plan,
-            (SELECT COUNT(*) FROM images  i WHERE i.owner_id = u.id) AS image_count,
-            (SELECT COUNT(*) FROM vectors v WHERE v.owner_id = u.id) AS vector_count,
-            (SELECT COUNT(*) FROM jobs    j WHERE j.owner_id = u.id) AS job_count,
-            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i WHERE i.owner_id = u.id) AS storage_bytes,
+            u.account_id, u.org_role,
+            a.plan,
+            (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS image_count,
+            (SELECT COUNT(*) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = u.account_id) AS vector_count,
+            (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = u.account_id) AS job_count,
+            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS storage_bytes,
             EXISTS (
                 SELECT 1 FROM user_model_permissions p
                 JOIN models m ON m.id = p.model_id
-                WHERE p.user_id = u.id AND m.is_free = false
+                JOIN users u3 ON u3.id = p.user_id
+                WHERE u3.account_id = u.account_id AND m.is_free = false
             ) AS has_paid_model
         FROM users u
+        JOIN accounts a ON a.id = u.account_id
         ORDER BY u.created_at DESC
     """)
     rows = cur.fetchall()
@@ -307,7 +313,11 @@ def superadmin_list_users():
 def superadmin_set_plan(clerk_id: str, plan: str):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE users SET plan = %s WHERE clerk_id = %s RETURNING id", (plan, clerk_id))
+    cur.execute("""
+        UPDATE accounts SET plan = %s
+        WHERE id = (SELECT account_id FROM users WHERE clerk_id = %s)
+        RETURNING id
+    """, (plan, clerk_id))
     row = cur.fetchone()
     conn.commit()
     cur.close()
@@ -318,7 +328,11 @@ def superadmin_get_user_detail(clerk_id: str):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM users WHERE clerk_id = %s", (clerk_id,))
+    cur.execute("""
+        SELECT u.*, a.plan AS account_plan, a.clerk_org_id
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
     user = cur.fetchone()
     if not user:
         cur.close(); conn.close()
@@ -326,24 +340,38 @@ def superadmin_get_user_detail(clerk_id: str):
     user = dict(user)
 
     owner_id = user['id']
+    account_id = user['account_id']
 
-    # Stats
+    # This user's own activity (unaffected by teammates)
     cur.execute("""
         SELECT
-            COUNT(DISTINCT i.id) AS image_count,
-            COUNT(DISTINCT v.id) AS vector_count,
-            COUNT(DISTINCT j.id) AS job_count,
-            COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'done')    AS jobs_done,
-            COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'failed')  AS jobs_failed,
-            COUNT(DISTINCT j.id) FILTER (WHERE j.status = 'running') AS jobs_running,
-            COALESCE(SUM(i.filesize), 0) AS storage_bytes
-        FROM users u
-        LEFT JOIN images  i ON i.owner_id = u.id
-        LEFT JOIN vectors v ON v.owner_id = u.id
-        LEFT JOIN jobs    j ON j.owner_id = u.id
-        WHERE u.id = %s
-    """, (owner_id,))
+            (SELECT COUNT(*) FROM images  i WHERE i.owner_id = %(uid)s) AS image_count,
+            (SELECT COUNT(*) FROM vectors v WHERE v.owner_id = %(uid)s) AS vector_count,
+            (SELECT COUNT(*) FROM jobs    j WHERE j.owner_id = %(uid)s) AS job_count,
+            (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'done')    AS jobs_done,
+            (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'failed')  AS jobs_failed,
+            (SELECT COUNT(*) FROM jobs j WHERE j.owner_id = %(uid)s AND j.status = 'running') AS jobs_running,
+            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i WHERE i.owner_id = %(uid)s) AS storage_bytes
+    """, {"uid": owner_id})
     user['stats'] = dict(cur.fetchone())
+
+    # Rolled up across the whole account (shared quota) — what actually
+    # counts against the account's plan limit.
+    cur.execute("""
+        SELECT
+            (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) AS image_count,
+            (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = %(aid)s) AS job_count,
+            (SELECT COALESCE(SUM(i.filesize), 0) FROM images i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) AS storage_bytes
+    """, {"aid": account_id})
+    user['account_stats'] = dict(cur.fetchone())
+
+    # Teammates sharing this account (invited users, or the admin if this is one)
+    cur.execute("""
+        SELECT id, clerk_id, email, username, org_role
+        FROM users WHERE account_id = %s AND id != %s
+        ORDER BY created_at
+    """, (account_id, owner_id))
+    user['teammates'] = [dict(r) for r in cur.fetchall()]
 
     # Recent jobs
     cur.execute("""
