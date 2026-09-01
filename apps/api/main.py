@@ -400,11 +400,19 @@ def preview_vector(vector_id: str, clerk_id: str):
     vb_w  = half * 2
     vb_h  = half * 2
     sw = size * 0.006
+    # ST_AsSVG joins the paths of a heterogeneous collection (multiple
+    # features) with ";" — valid only inside <animate values="...">, not as
+    # a single <path d="..."> value. Split into one <path> per sub-geometry.
+    subpaths = [p.strip() for p in row["path"].split(";") if p.strip()]
+    path_elements = "".join(
+        f'<path d="{p}" fill="#6AA8A0" fill-opacity="0.40" stroke="#3D7A72" '
+        f'stroke-width="{sw}" stroke-linejoin="round"/>'
+        for p in subpaths
+    )
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x} {vb_y} {vb_w} {vb_h}" '
         f'preserveAspectRatio="xMidYMid meet">'
-        f'<path d="{row["path"]}" fill="#6AA8A0" fill-opacity="0.40" stroke="#3D7A72" '
-        f'stroke-width="{sw}" stroke-linejoin="round"/>'
+        f'{path_elements}'
         f'</svg>'
     )
     return Response(
