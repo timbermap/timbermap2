@@ -5,6 +5,8 @@ from datetime import timedelta
 from fastapi import FastAPI, HTTPException, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import storage
+import google.auth.transport.requests
+import google.oauth2.id_token
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -54,7 +56,24 @@ app.include_router(models_router)
 
 CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-tjrp7tcqaa-uc.a.run.app")
 CLEANUP_INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")
-CLEANUP_HEADERS = {"x-internal-secret": CLEANUP_INTERNAL_SECRET} if CLEANUP_INTERNAL_SECRET else {}
+
+
+def cleanup_worker_headers() -> dict:
+    """Auth headers for calling the cleanup worker: an OIDC identity token
+    (required now that the service is IAM-restricted to this service account)
+    plus the app-level shared secret it also checks."""
+    headers = {}
+    if CLEANUP_INTERNAL_SECRET:
+        headers["x-internal-secret"] = CLEANUP_INTERNAL_SECRET
+    try:
+        auth_req = google.auth.transport.requests.Request()
+        token = google.oauth2.id_token.fetch_id_token(auth_req, CLEANUP_WORKER_URL)
+        headers["Authorization"] = f"Bearer {token}"
+    except Exception as e:
+        print(f"Failed to fetch OIDC token for cleanup worker: {e}")
+    return headers
+
+
 GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
 
 
@@ -247,7 +266,7 @@ def delete_image(image_id: str, clerk_id: str):
     if not any(str(i["id"]) == image_id for i in images):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/raster/{image_id}", headers=CLEANUP_HEADERS, timeout=60)
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/raster/{image_id}", headers=cleanup_worker_headers(), timeout=60)
         r.raise_for_status()
         return {"deleted": "image", "image_id": image_id}
     except Exception as e:
@@ -311,7 +330,7 @@ def delete_vector(vector_id: str, clerk_id: str):
     if not any(str(v["id"]) == vector_id for v in vectors):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/vector/{vector_id}", headers=CLEANUP_HEADERS, timeout=60)
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/vector/{vector_id}", headers=cleanup_worker_headers(), timeout=60)
         r.raise_for_status()
         return {"deleted": "vector", "vector_id": vector_id}
     except Exception as e:
