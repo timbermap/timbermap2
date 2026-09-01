@@ -1,7 +1,6 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { SignIn, SignUp } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
 const MODELS = [
@@ -59,25 +58,8 @@ function ModelCard({ model }: { model: typeof MODELS[0] }) {
 }
 
 export default function Landing() {
-  const [authModal, setAuthModal] = useState<null | 'signin' | 'signup'>(null)
-
   return (
     <div className="tm">
-
-      {/* ── Auth modal ──────────────────────────────────────────────────── */}
-      {authModal && (
-        <div className="tm-modal-bg" onClick={() => setAuthModal(null)}>
-          <div className="tm-modal" onClick={e => e.stopPropagation()}>
-            <button className="tm-modal-close" onClick={() => setAuthModal(null)}>✕</button>
-            {authModal === 'signin'
-              ? <SignIn routing="hash" signUpUrl="#" forceRedirectUrl="/dashboard"
-                  appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 p-0' } }} />
-              : <SignUp routing="hash" signInUrl="#" forceRedirectUrl="/dashboard"
-                  appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 p-0' } }} />
-            }
-          </div>
-        </div>
-      )}
 
       {/* ── Nav ─────────────────────────────────────────────────────────── */}
       <nav className="tm-nav">
@@ -95,9 +77,9 @@ export default function Landing() {
             <a href="#features">Features</a>
             <a href="#models">Models</a>
             <a href="#contact">Contact</a>
-            <button onClick={() => setAuthModal('signin')} className="tm-nav-btn">Sign in</button>
+            <Link href="/sign-in" className="tm-nav-btn">Sign in</Link>
           </div>
-          <button onClick={() => setAuthModal('signin')} className="tm-nav-btn tm-nav-btn-mobile">Sign in</button>
+          <Link href="/sign-in" className="tm-nav-btn tm-nav-btn-mobile">Sign in</Link>
         </div>
       </nav>
 
@@ -122,7 +104,7 @@ export default function Landing() {
             Upload drone or aircraft imagery of your forest plantation. Get AI-powered results — tree crown counts, inter-row spacing, fault density maps — in under an hour.
           </p>
           <div className="tm-hero-ctas">
-            <button onClick={() => setAuthModal('signup')} className="tm-btn-primary">Get started →</button>
+            <Link href="/sign-up" className="tm-btn-primary">Get started →</Link>
             <a href="#contact" className="tm-btn-outline">Talk to us</a>
           </div>
           <div className="tm-hero-stats">
@@ -277,7 +259,7 @@ export default function Landing() {
           </div>
           <p>© 2026 Forestech Uy</p>
           <div className="tm-footer-links">
-            <button onClick={() => setAuthModal('signin')} style={{background:'none',border:'none',cursor:'pointer',color:'inherit'}}>Sign in</button>
+            <Link href="/sign-in" style={{background:'none',border:'none',cursor:'pointer',color:'inherit'}}>Sign in</Link>
             <a href="#contact">Contact</a>
           </div>
         </div>
