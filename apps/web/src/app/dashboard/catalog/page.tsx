@@ -191,8 +191,8 @@ function ModelCard({
       Active
     </span>
   ) : model.upgrade_requested ? (
-    <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-600 text-xs font-semibold px-2 py-0.5 rounded-full border border-amber-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
+    <span className="inline-flex items-center gap-1 bg-[#FBF6EA] text-[#96814A] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#E6D9AE]">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
       Pending
     </span>
   ) : (
@@ -283,8 +283,8 @@ function ModelCard({
                 )}
               </button>
             ) : model.upgrade_requested ? (
-              <div className="flex items-center gap-1.5 text-amber-600 text-xs font-medium">
-                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>
+              <div className="flex items-center gap-1.5 text-[#96814A] text-xs font-medium">
+                <span className="w-2 h-2 rounded-full bg-[#C9AD6C] inline-block"/>
                 Access request pending — we'll be in touch
               </div>
             ) : (
@@ -430,50 +430,7 @@ export default function CatalogPage() {
 
       <div className="space-y-8">
 
-        {/* ── PRO section ───────────────────────────────────────────────── */}
-        {(pro.length > 0 || !q) && (
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
-                Pro
-              </span>
-              <span className="text-xs text-gray-400 font-medium">Advanced models</span>
-            </div>
-            {proActive > 0 && (
-              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
-                {proActive} active
-              </span>
-            )}
-            <div className="flex-1 h-px bg-gray-100"/>
-          </div>
-
-          {pro.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-              <p className="text-gray-400 text-sm">No pro models available yet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {pro.map(m => (
-                <ModelCard
-                  key={m.id}
-                  model={m}
-                  open={openId === m.id}
-                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
-                  onActivate={() => activateFree(m)}
-                  onRequestUpgrade={() => setUpgradeModel(m)}
-                  onToggleVisibility={() => toggleVisibility(m)}
-                  activating={activating === m.id}
-                  toggling={toggling === m.id}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        )}
-
-        {/* ── FREE section ──────────────────────────────────────────────── */}
+        {/* ── FREE section — shown first ──────────────────────────────────── */}
         {(free.length > 0 || !q) && (
         <div>
           <div className="flex items-center gap-3 mb-3">
@@ -499,6 +456,49 @@ export default function CatalogPage() {
           ) : (
             <div className="space-y-2">
               {free.map(m => (
+                <ModelCard
+                  key={m.id}
+                  model={m}
+                  open={openId === m.id}
+                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
+                  onActivate={() => activateFree(m)}
+                  onRequestUpgrade={() => setUpgradeModel(m)}
+                  onToggleVisibility={() => toggleVisibility(m)}
+                  activating={activating === m.id}
+                  toggling={toggling === m.id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* ── PRO section — de-emphasized, below Free ─────────────────────── */}
+        {(pro.length > 0 || !q) && (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
+                Pro
+              </span>
+              <span className="text-xs text-gray-400 font-medium">Advanced models</span>
+            </div>
+            {proActive > 0 && (
+              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                {proActive} active
+              </span>
+            )}
+            <div className="flex-1 h-px bg-gray-100"/>
+          </div>
+
+          {pro.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+              <p className="text-gray-400 text-sm">No pro models available yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pro.map(m => (
                 <ModelCard
                   key={m.id}
                   model={m}

@@ -416,8 +416,8 @@ export default function ModelsPage() {
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
                   Pro
                 </span>
                 <span className="text-xs text-gray-400 font-medium">Advanced models</span>
@@ -446,9 +446,9 @@ export default function ModelsPage() {
         {/* ── Upsell strip — free users only, low-key, not a big centered box ── */}
         {!isPro && (
           <a href="/dashboard/catalog"
-            className="flex items-center justify-between gap-4 bg-amber-50/60 hover:bg-amber-50 border border-amber-100 rounded-xl px-5 py-3.5 transition-colors cursor-pointer group">
+            className="flex items-center justify-between gap-4 bg-[#FBF6EA]/70 hover:bg-[#FBF6EA] border border-[#EEE3C2] rounded-xl px-5 py-3.5 transition-colors cursor-pointer group">
             <div className="flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-amber-500 flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#C9AD6C] flex-shrink-0">
                 <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.449 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd"/>
               </svg>
               <p className="text-sm text-gray-600">
@@ -456,7 +456,7 @@ export default function ModelsPage() {
                 {' '}— tree crowns, tillage lines, fault detection, and more.
               </p>
             </div>
-            <span className="text-xs font-semibold text-amber-700 group-hover:text-amber-800 whitespace-nowrap flex items-center gap-1">
+            <span className="text-xs font-semibold text-[#96814A] group-hover:text-[#7A6839] whitespace-nowrap flex items-center gap-1">
               <CatalogIcon />
               View catalog →
             </span>

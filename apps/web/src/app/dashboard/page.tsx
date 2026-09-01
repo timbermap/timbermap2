@@ -301,7 +301,7 @@ export default function Dashboard() {
           <p className="text-gray-400 mt-0.5 text-sm">
             Welcome back, {name}
             {' · '}
-            <span className={`font-medium ${isPro ? 'text-amber-600' : 'text-[#6AA8A0]'}`}>{planLabel}</span>
+            <span className={`font-medium ${isPro ? 'text-[#96814A]' : 'text-[#6AA8A0]'}`}>{planLabel}</span>
           </p>
         </div>
         <Link href="/dashboard/catalog"
@@ -410,7 +410,7 @@ export default function Dashboard() {
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
                     m.is_free
                       ? 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
-                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]'
                   }`}>
                     {m.is_free ? 'Free' : 'Pro'}
                   </span>
@@ -554,7 +554,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Resources</p>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-              isPro ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
+              isPro ? 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]' : 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
             }`}>{isPro ? 'Pro' : 'Free'}</span>
           </div>
           <div className="space-y-4">
