@@ -6,9 +6,10 @@ For large files (>1GB): reads directly from GCS via /vsigs/ without downloading.
 
 import os
 import json
+import logging
 import tempfile
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -22,6 +23,14 @@ app = FastAPI(title="Timbermap Raster Worker")
 
 GCS_BUCKET     = os.getenv("GCS_BUCKET", "timbermap-data")
 GCP_PROJECT    = os.getenv("GCP_PROJECT", "timbermap-prod")
+
+# Configure GDAL for GCS access via /vsigs/ using GCE metadata server
+from osgeo import gdal as _gdal
+_gdal.UseExceptions()
+_gdal.SetConfigOption("CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE", "YES")
+_gdal.SetConfigOption("GDAL_HTTP_TIMEOUT", "120")
+_gdal.SetConfigOption("CPL_GCE_CREDENTIALS_URL",
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
 
 # Files larger than this are processed directly from GCS via /vsigs/
 LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024  # 500 MB
@@ -57,6 +66,18 @@ def update_job(job_id: str, status: str, message: str):
     conn.commit()
     cur.close()
     conn.close()
+
+
+def is_cancelled(job_id: str) -> bool:
+    try:
+        conn = get_conn()
+        cur  = conn.cursor()
+        cur.execute("SELECT status FROM jobs WHERE id = %s", (job_id,))
+        row  = cur.fetchone()
+        cur.close(); conn.close()
+        return bool(row and row["status"] == "cancelled")
+    except Exception:
+        return False
 
 
 def update_job_summary(job_id: str, summary: dict):
@@ -106,7 +127,10 @@ def get_gcs_file_size(gcs_path: str) -> int:
 
 
 def download_from_gcs(gcs_path: str, local_path: str):
-    storage.Client().bucket(GCS_BUCKET).blob(gcs_path).download_to_filename(local_path)
+    """Download from GCS using large chunk size for faster transfer."""
+    blob = storage.Client().bucket(GCS_BUCKET).blob(gcs_path)
+    blob.chunk_size = 32 * 1024 * 1024  # 32MB chunks
+    blob.download_to_filename(local_path)
 
 
 def upload_to_gcs(local_path: str, gcs_path: str):
@@ -169,7 +193,7 @@ def strip_alpha_gdal(input_path: str, output_path: str) -> str:
     opts = gdal.TranslateOptions(
         bandList=[1, 2, 3],
         format="GTiff",
-        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512"],
+        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512", "BIGTIFF=YES"],
     )
     result = gdal.Translate(output_path, input_path, options=opts)
     if result is None:
@@ -180,7 +204,7 @@ def strip_alpha_gdal(input_path: str, output_path: str) -> str:
 
 
 def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
-    """Generate thumbnail via heavily downsampled read — works with /vsigs/ paths."""
+    """Generate thumbnail from a local COG file (has internal overviews — always fast)."""
     import rasterio
     from rasterio.enums import Resampling
     from PIL import Image
@@ -191,97 +215,133 @@ def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
         new_h = max(1, int(src.height * scale))
 
         if src.count >= 3:
-            data = src.read(
-                [1, 2, 3],
-                out_shape=(3, new_h, new_w),
-                resampling=Resampling.average
-            )
+            data = src.read([1, 2, 3], out_shape=(3, new_h, new_w),
+                            resampling=Resampling.nearest)
             img_array = np.moveaxis(data, 0, -1)
         else:
-            data = src.read(
-                1,
-                out_shape=(1, new_h, new_w),
-                resampling=Resampling.average
-            )
+            data = src.read(1, out_shape=(1, new_h, new_w),
+                            resampling=Resampling.nearest)
             img_array = np.stack([data[0], data[0], data[0]], axis=-1)
 
-        img_min, img_max = float(img_array.min()), float(img_array.max())
-        if img_max > img_min:
-            img_array = ((img_array - img_min) / (img_max - img_min) * 255)
-        img_array = img_array.astype(np.uint8)
-        Image.fromarray(img_array, "RGB").save(thumb_path, "JPEG", quality=85)
+        img_array = img_array.astype(np.float32)
+        mn, mx = float(img_array.min()), float(img_array.max())
+        if mx > mn:
+            img_array = (img_array - mn) / (mx - mn) * 255
+        Image.fromarray(img_array.astype(np.uint8), "RGB").save(thumb_path, "JPEG", quality=85)
 
 
-def convert_to_cog(input_path: str, output_path: str, gcs_output_path: Optional[str] = None):
+def convert_to_cog(input_path: str, output_path: str):
+    """Convert raster to Cloud-Optimized GeoTIFF in EPSG:3857 using subprocess.
+
+    input_path can be a local path or a /vsigs/ GCS path.
+    Uses subprocess GDAL tools to avoid Python heap memory pressure.
+    Passes GCS auth env vars so subprocesses can read /vsigs/ paths.
     """
-    Convert to Cloud-Optimized GeoTIFF in EPSG:3857.
-    input_path can be a local path OR a /vsigs/ path — GDAL handles both.
-
-    For large files (input from /vsigs/), writes COG directly to GCS via /vsigs/
-    to avoid filling up the 512MB /tmp on Cloud Run.
-    gcs_output_path: GCS path like "users/cogs/{image_id}.tif" — used to build
-    the /vsigs/ output path when input is large. If None, writes to output_path locally.
-    """
+    import subprocess
     from osgeo import gdal
     gdal.UseExceptions()
 
-    # Strip alpha only for local files
-    if input_path.startswith("/vsigs/"):
-        working_path = input_path
-    else:
-        stripped_path = input_path + "_rgb.tif"
-        working_path = strip_alpha_gdal(input_path, stripped_path)
+    # Env vars for subprocess GCS access via /vsigs/
+    gdal_env = os.environ.copy()
+    gdal_env.update({
+        "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
+        "GDAL_HTTP_TIMEOUT": "300",
+        "CPL_GCE_CREDENTIALS_URL": (
+            "http://metadata.google.internal/computeMetadata/v1/"
+            "instance/service-accounts/default/token"
+        ),
+    })
 
-    # For large files coming via /vsigs/, write COG output directly back to GCS
-    # to avoid /tmp overflow. COG driver supports /vsigs/ output.
-    if input_path.startswith("/vsigs/") and gcs_output_path:
-        actual_output = f"/vsigs/{GCS_BUCKET}/{gcs_output_path}"
-        # Required for GDAL to write COG (random-write format) to /vsigs/
-        gdal.SetConfigOption("CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE", "YES")
-        gdal.SetConfigOption("CPL_VSIL_TEMP_FILE_DIR", "/tmp")
-    else:
-        actual_output = output_path
+    # Detect data bands — exclude alpha bands, keep all spectral bands
+    ds = gdal.Open(input_path)
+    if ds is None:
+        raise RuntimeError(f"Cannot open {input_path}")
+    nbands = ds.RasterCount
+    data_bands = [
+        i for i in range(1, nbands + 1)
+        if ds.GetRasterBand(i).GetColorInterpretation() != gdal.GCI_AlphaBand
+    ]
+    ds = None
 
-    warp_opts = gdal.WarpOptions(
-        dstSRS="EPSG:3857",
-        resampleAlg=gdal.GRA_Bilinear,
-        format="COG",
-        creationOptions=[
-            "BLOCKSIZE=256",
-            "TILING_SCHEME=GoogleMapsCompatible",
-            "COMPRESS=DEFLATE",
-            "OVERVIEWS=IGNORE_EXISTING",
-            "NUM_THREADS=ALL_CPUS",
-        ],
-        dstAlpha=True,
-        warpOptions=["INIT_DEST=255,255,255,0"],
-        warpMemoryLimit=512,    # Low RAM usage — forces tile-based disk processing, safe for 20GB+
-        multithread=True,
-    )
-    result = gdal.Warp(actual_output, working_path, options=warp_opts)
-    if result is None:
-        raise RuntimeError(f"gdal.Warp COG conversion failed for {working_path}")
-    result.FlushCache()
-    result = None
+    if not data_bands:
+        data_bands = [1]  # fallback
 
-    if not input_path.startswith("/vsigs/") and working_path != input_path and os.path.exists(working_path):
-        os.remove(working_path)
+    band_args = []
+    for b in data_bands:
+        band_args += ["-b", str(b)]
 
-    # Return whether we wrote directly to GCS (caller skips upload in that case)
-    return actual_output == f"/vsigs/{GCS_BUCKET}/{gcs_output_path}" if gcs_output_path else False
+    is_vsigs = input_path.startswith("/vsigs/")
+
+    # Step 1: reproject to EPSG:3857 (required for map tile rendering)
+    # Output is always local — /tmp has 32GB on gen2
+    warped_path = os.path.join(tempfile.gettempdir(), os.path.basename(output_path) + "_3857.tif")
+    cmd_warp = [
+        "gdalwarp",
+        "-t_srs", "EPSG:3857",
+        "-r", "bilinear",
+        "-of", "GTiff",
+        "-co", "COMPRESS=DEFLATE",
+        "-co", "TILED=YES",
+        "-co", "BLOCKXSIZE=512",
+        "-co", "BLOCKYSIZE=512",
+        "-co", "BIGTIFF=YES",
+        "-wm", "512",
+        "-multi",
+        "--config", "GDAL_CACHEMAX", "256",
+    ] + band_args + [input_path, warped_path]
+
+    r1 = subprocess.run(cmd_warp, capture_output=True, text=True, timeout=7200, env=gdal_env)
+    if r1.returncode != 0:
+        raise RuntimeError(f"gdalwarp reproject failed: {r1.stderr[:500]}")
+
+    # Delete local source to free disk (skip for /vsigs/ — nothing to delete)
+    if not is_vsigs and os.path.exists(input_path):
+        os.remove(input_path)
+
+    # Step 2: build overviews externally (low RAM — sequential tile reads)
+    cmd_addo = [
+        "gdaladdo",
+        "--config", "GDAL_CACHEMAX", "256",
+        "--config", "COMPRESS_OVERVIEW", "DEFLATE",
+        "-r", "nearest",
+        warped_path,
+        "2", "4", "8", "16", "32", "64", "128",
+    ]
+    r2 = subprocess.run(cmd_addo, capture_output=True, text=True, timeout=7200, env=gdal_env)
+    if r2.returncode != 0:
+        if os.path.exists(warped_path):
+            os.remove(warped_path)
+        raise RuntimeError(f"gdaladdo overviews failed: {r2.stderr[:500]}")
+
+    # Step 3: translate to COG reusing prebuilt overviews (no recompute = low RAM)
+    cmd_cog = [
+        "gdal_translate",
+        "-of", "COG",
+        "-co", "BLOCKSIZE=256",
+        "-co", "COMPRESS=DEFLATE",
+        "-co", "OVERVIEWS=FORCE_USE_EXISTING",
+        "-co", "BIGTIFF=YES",
+        "--config", "GDAL_CACHEMAX", "256",
+        warped_path, output_path,
+    ]
+    r3 = subprocess.run(cmd_cog, capture_output=True, text=True, timeout=7200, env=gdal_env)
+    if os.path.exists(warped_path):
+        os.remove(warped_path)
+    if r3.returncode != 0:
+        raise RuntimeError(f"gdal_translate COG failed: {r3.stderr[:500]}")
 
 
 def warp_raster(input_path: str, output_path: str,
-                target_epsg: str, target_resolution_m: Optional[float] = None):
-    """Reproject raster — disk-based. input_path can be /vsigs/."""
+                target_epsg: Optional[str], target_resolution_m: Optional[float] = None):
+    """Reproject/resample raster — disk-based. input_path can be /vsigs/."""
     from osgeo import gdal
     gdal.UseExceptions()
     warp_opts = gdal.WarpOptions(
-        dstSRS=f"EPSG:{target_epsg}",
+        dstSRS=f"EPSG:{target_epsg}" if target_epsg else None,
         xRes=target_resolution_m,
         yRes=target_resolution_m,
         resampleAlg=gdal.GRA_Bilinear,
-        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512"],
+        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512", "BIGTIFF=YES"],
         format="GTiff",
         warpMemoryLimit=512,    # Low RAM usage — safe for large files
         multithread=True,
@@ -300,13 +360,15 @@ class IngestJob(BaseModel):
     image_id: str
     gcs_path: str
     filename: str
+    clerk_id: str = ""
 
 
 class TransformJob(BaseModel):
     job_id: str
     image_id: str
-    target_epsg: str
+    target_epsg: Optional[str] = None
     target_resolution_m: Optional[float] = None
+    clerk_id: str = ""
 
 
 @app.get("/health")
@@ -314,14 +376,20 @@ def health():
     return {"status": "ok", "service": "raster-worker"}
 
 
-@app.post("/ingest")
-async def ingest_raster(job: IngestJob):
-    update_job(job.job_id, "running", "Checking file size...")
-    publish_status(job.job_id, "running", "Checking file size...")
+def _do_ingest(job: IngestJob):
+    """Background processing — runs after Cloud Tasks already got its 200.
+    Reads directly from GCS via /vsigs/ — no download needed."""
+    try:
+        file_size = get_gcs_file_size(job.gcs_path)
+    except Exception as e:
+        if "404" in str(e) or "NotFound" in type(e).__name__:
+            msg = f"File not found in GCS: {job.gcs_path}"
+            logging.error(msg)
+            update_job(job.job_id, "failed", msg)
+            update_image(job.image_id, status="failed")
+            return
+        raise
 
-    # Check if file is large — if so, use /vsigs/ to avoid downloading
-    file_size = get_gcs_file_size(job.gcs_path)
-    use_vsigs = file_size > LARGE_FILE_THRESHOLD_BYTES
     size_mb = file_size / 1024 / 1024
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -329,28 +397,27 @@ async def ingest_raster(job: IngestJob):
         cog_path   = os.path.join(tmpdir, "cog.tif")
 
         try:
-            if use_vsigs:
-                # Large file: read directly from GCS — no download needed
-                update_job(job.job_id, "running", f"Large file ({size_mb:.0f} MB) — streaming from GCS...")
-                src_path = vsigs_path(job.gcs_path)
-            else:
-                # Small file: download to local temp for faster processing
-                update_job(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
-                src_path = os.path.join(tmpdir, job.filename)
-                download_from_gcs(job.gcs_path, src_path)
+            # Download with gsutil -m (parallel, ~1-2 min for 1GB vs 10-15 min with Python client)
+            update_job(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
+            publish_status(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
+            src_path = os.path.join(tmpdir, job.filename)
+            download_from_gcs(job.gcs_path, src_path)
 
+            if is_cancelled(job.job_id): return
             update_job(job.job_id, "running", "Reading metadata...")
             meta = extract_metadata(src_path)
 
-            update_job(job.job_id, "running", "Generating thumbnail...")
-            generate_thumbnail(src_path, thumb_path)
-            upload_to_gcs(thumb_path, f"users/thumbnails/{job.image_id}.jpg")
-
+            if is_cancelled(job.job_id): return
             update_job(job.job_id, "running", f"Converting to COG ({size_mb:.0f} MB)...")
-            cog_gcs_dest = f"users/cogs/{job.image_id}.tif"
-            wrote_direct = convert_to_cog(src_path, cog_path, gcs_output_path=cog_gcs_dest if use_vsigs else None)
-            if not wrote_direct:
-                upload_to_gcs(cog_path, cog_gcs_dest)
+            publish_status(job.job_id, "running", f"Converting to COG ({size_mb:.0f} MB)...")
+            cog_gcs_dest = f"users/{job.clerk_id}/cogs/{job.image_id}.tif"
+            convert_to_cog(src_path, cog_path)
+            upload_to_gcs(cog_path, cog_gcs_dest)
+
+            # Thumbnail from local COG (has overviews) — always fast
+            update_job(job.job_id, "running", "Generating thumbnail...")
+            generate_thumbnail(cog_path if os.path.exists(cog_path) else src_path, thumb_path)
+            upload_to_gcs(thumb_path, f"users/{job.clerk_id}/thumbnails/{job.image_id}.jpg")
 
             bbox = meta.get("bbox", {})
             update_image(
@@ -370,46 +437,69 @@ async def ingest_raster(job: IngestJob):
 
             update_job(job.job_id, "done", "Ingest complete")
             publish_status(job.job_id, "done", "Ingest complete")
-            return {"status": "done", "meta": meta}
 
         except Exception as e:
-            update_job(job.job_id, "failed", str(e))
-            publish_status(job.job_id, "failed", str(e))
+            msg = str(e)
+            logging.error("Ingest failed for job %s: %s", job.job_id, msg)
+            update_job(job.job_id, "failed", msg)
+            publish_status(job.job_id, "failed", msg)
             update_image(job.image_id, status="failed")
-            raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/transform")
-async def transform_raster(job: TransformJob):
-    update_job(job.job_id, "running", "Checking file size...")
-    publish_status(job.job_id, "running", "Starting raster transform...")
+@app.post("/ingest")
+async def ingest_raster(job: IngestJob, background_tasks: BackgroundTasks):
+    """Accept immediately — Cloud Tasks gets 200 right away, no 30-min timeout."""
+    update_job(job.job_id, "running", "Accepted — processing in background...")
+    publish_status(job.job_id, "running", "Accepted — processing in background...")
+    background_tasks.add_task(_do_ingest, job)
+    return {"status": "accepted"}
 
-    cog_gcs_path = f"users/cogs/{job.image_id}.tif"
-    file_size    = get_gcs_file_size(cog_gcs_path)
-    use_vsigs    = file_size > LARGE_FILE_THRESHOLD_BYTES
-    size_mb      = file_size / 1024 / 1024
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        warped_path = os.path.join(tmpdir, "warped.tif")
-        cog_path    = os.path.join(tmpdir, "cog.tif")
+def _do_transform(job: TransformJob):
+    """Background processing for transform."""
+    try:
+        update_job(job.job_id, "running", "Checking file size...")
+        publish_status(job.job_id, "running", "Starting raster transform...")
 
-        try:
-            if use_vsigs:
-                update_job(job.job_id, "running", f"Large file ({size_mb:.0f} MB) — streaming from GCS...")
-                src_path = vsigs_path(cog_gcs_path)
-            else:
-                update_job(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
-                src_path = os.path.join(tmpdir, "source.tif")
-                download_from_gcs(cog_gcs_path, src_path)
+        cog_gcs_path = f"users/{job.clerk_id}/cogs/{job.image_id}.tif"
+        file_size    = get_gcs_file_size(cog_gcs_path)
+        size_mb      = file_size / 1024 / 1024
 
-            update_job(job.job_id, "running", f"Reprojecting to EPSG:{job.target_epsg}...")
-            warp_raster(src_path, warped_path, job.target_epsg, job.target_resolution_m)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            warped_path = os.path.join(tmpdir, "warped.tif")
+            cog_path    = os.path.join(tmpdir, "cog.tif")
 
+            # Always download locally for transform — vsigs streaming breaks on long warp operations
+            update_job(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
+            src_path = os.path.join(tmpdir, "source.tif")
+            download_from_gcs(cog_gcs_path, src_path)
+
+            if is_cancelled(job.job_id): return
+
+            # Auto-select UTM if metric resolution requested but CRS is geographic (degrees)
+            target_epsg = job.target_epsg
+            if job.target_resolution_m:
+                import rasterio
+                with rasterio.open(src_path) as ds:
+                    crs = ds.crs
+                    is_geographic = crs.is_geographic if crs else False
+                    if is_geographic and (not target_epsg or target_epsg in ("4326","4269","4258","4230")):
+                        bounds = ds.bounds
+                        lon = (bounds.left + bounds.right) / 2
+                        lat = (bounds.bottom + bounds.top) / 2
+                        zone = int((lon + 180) / 6) + 1
+                        target_epsg = str(32600 + zone if lat >= 0 else 32700 + zone)
+                        update_job(job.job_id, "running", f"Geographic CRS detected — auto-selecting UTM EPSG:{target_epsg}...")
+
+            epsg_label = f"EPSG:{target_epsg}" if target_epsg else "current CRS"
+            update_job(job.job_id, "running", f"Resampling to {epsg_label}...")
+            warp_raster(src_path, warped_path, target_epsg, job.target_resolution_m)
+
+            if is_cancelled(job.job_id): return
             meta_warped = extract_metadata(warped_path)
 
             update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
-            cog_gcs_dest = f"users/cogs/{job.image_id}.tif"
-            # warped_path is always local so no direct-write needed here
+            cog_gcs_dest = f"users/{job.clerk_id}/cogs/{job.image_id}.tif"
             convert_to_cog(warped_path, cog_path)
             upload_to_gcs(cog_path, cog_gcs_dest)
 
@@ -434,13 +524,21 @@ async def transform_raster(job: TransformJob):
                   (f" @ {job.target_resolution_m}m" if job.target_resolution_m else "")
             update_job(job.job_id, "done", msg)
             publish_status(job.job_id, "done", msg)
-            return {"status": "done", "meta": meta_warped}
 
-        except Exception as e:
-            update_job(job.job_id, "failed", str(e))
-            publish_status(job.job_id, "failed", str(e))
-            update_image(job.image_id, status="failed")
-            raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logging.error("Transform failed for job %s: %s", job.job_id, str(e))
+        update_job(job.job_id, "failed", str(e))
+        publish_status(job.job_id, "failed", str(e))
+        update_image(job.image_id, status="failed")
+
+
+@app.post("/transform")
+async def transform_raster(job: TransformJob, background_tasks: BackgroundTasks):
+    """Accept immediately — Cloud Tasks gets 200 right away, no 30-min timeout."""
+    update_job(job.job_id, "running", "Accepted — processing in background...")
+    publish_status(job.job_id, "running", "Accepted — processing in background...")
+    background_tasks.add_task(_do_transform, job)
+    return {"status": "accepted"}
 
 
 # ── Gap detection ─────────────────────────────────────────────────────────────
@@ -528,14 +626,14 @@ class GapDetectionJob(BaseModel):
     job_id: str
     image_id: str
     params: dict = {}
+    clerk_id: str = ""
 
 
-@app.post("/analyze/gaps")
-async def analyze_gaps(job: GapDetectionJob):
+def _do_analyze_gaps(job: GapDetectionJob):
     update_job(job.job_id, "running", "Starting gap detection...")
     publish_status(job.job_id, "running", "Starting gap detection...")
 
-    cog_gcs_path = f"users/cogs/{job.image_id}.tif"
+    cog_gcs_path = f"users/{job.clerk_id}/cogs/{job.image_id}.tif"
     file_size    = get_gcs_file_size(cog_gcs_path)
     use_vsigs    = file_size > LARGE_FILE_THRESHOLD_BYTES
     size_mb      = file_size / 1024 / 1024
@@ -593,7 +691,7 @@ async def analyze_gaps(job: GapDetectionJob):
                 clipped_path = os.path.join(tmpdir, "clipped.tif")
                 _gdal.Warp(clipped_path, src_path if not src_path.startswith("/vsigs/") else f"/vsigs/{GCS_BUCKET}/{cog_gcs_path}",
                     format="GTiff", outputBounds=[minx, miny, maxx, maxy],
-                    creationOptions=["COMPRESS=LZW", "TILED=YES"])
+                    creationOptions=["COMPRESS=LZW", "TILED=YES", "BIGTIFF=YES"])
                 src_path = clipped_path
 
             from gaps_analyzer import detect_gaps
@@ -648,9 +746,17 @@ async def analyze_gaps(job: GapDetectionJob):
                 pass
             update_job(job.job_id, "done", summary_msg)
             publish_status(job.job_id, "done", summary_msg)
-            return {"status": "done", "stats": stats}
 
         except Exception as e:
             update_job(job.job_id, "failed", str(e))
             publish_status(job.job_id, "failed", str(e))
-            raise HTTPException(status_code=500, detail=str(e))
+            logging.error("Gap detection failed for job %s: %s", job.job_id, str(e))
+
+
+@app.post("/analyze/gaps")
+async def analyze_gaps(job: GapDetectionJob, background_tasks: BackgroundTasks):
+    """Accept immediately — Cloud Tasks gets 200 right away, no 30-min timeout."""
+    update_job(job.job_id, "running", "Accepted — processing in background...")
+    publish_status(job.job_id, "running", "Accepted — processing in background...")
+    background_tasks.add_task(_do_analyze_gaps, job)
+    return {"status": "accepted"}

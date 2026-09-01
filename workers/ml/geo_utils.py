@@ -167,6 +167,82 @@ def get_bbox_4326(src_path: str) -> list[float]:
 PATCH para geo_utils.py — agregar esta función junto a extract_vector_to_shp
 """
 
+def points_to_density_cog(features: list, ref_raster: str, job_id: str,
+                          resolution: float | None = None) -> str:
+    """
+    Rasterizes point features into a density COG.
+    Each pixel value = number of points falling in that cell.
+    resolution: pixel size in same CRS units as ref_raster. None = use ref_raster resolution.
+    Returns path to COG GeoTIFF.
+    """
+    import subprocess
+    import tempfile
+
+    if not features:
+        raise ValueError("No features to rasterize")
+
+    # Write points as GeoJSON
+    tmp_geojson = f"/tmp/{job_id}_density_pts.geojson"
+    import json as _json
+    fc = {"type": "FeatureCollection", "features": features}
+    with open(tmp_geojson, "w") as f:
+        _json.dump(fc, f)
+
+    # Get ref raster info
+    with rasterio.open(ref_raster) as src:
+        left   = src.bounds.left
+        bottom = src.bounds.bottom
+        right  = src.bounds.right
+        top    = src.bounds.top
+        res    = resolution or abs(src.transform.a)
+        epsg   = src.crs.to_epsg() if src.crs else 4326
+
+    raw_tif = f"/tmp/{job_id}_density_raw.tif"
+    cog_tif = f"/tmp/{job_id}_density_cog.tif"
+
+    # Rasterize: count points per pixel
+    cmd = [
+        "gdal_rasterize",
+        "-burn", "1",
+        "-add",                         # accumulate (count) per pixel
+        "-tr", str(res), str(res),
+        "-te", str(left), str(bottom), str(right), str(top),
+        "-a_srs", f"EPSG:{epsg}",
+        "-ot", "Float32",
+        "-of", "GTiff",
+        "-co", "COMPRESS=DEFLATE",
+        "-co", "TILED=YES",
+        "-co", "BLOCKXSIZE=512",
+        "-co", "BLOCKYSIZE=512",
+        tmp_geojson, raw_tif,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"gdal_rasterize failed: {r.stderr[:400]}")
+
+    # Warp → COG (GoogleMapsCompatible tiling for web display)
+    result = gdal.Warp(
+        cog_tif, raw_tif,
+        format="COG",
+        creationOptions=[
+            "BLOCKSIZE=256", "COMPRESS=DEFLATE",
+            "TILING_SCHEME=GoogleMapsCompatible", "BIGTIFF=YES",
+        ],
+    )
+    result = None
+
+    # Cleanup temp files
+    import os as _os
+    for p in [tmp_geojson, raw_tif]:
+        try:
+            _os.remove(p)
+        except OSError:
+            pass
+
+    log.info("Density COG → %s  (res=%.4f, epsg=%d, %d points)", cog_tif, res, epsg, len(features))
+    return cog_tif
+
+
 def geojson_to_shp(geojson_path: str, job_id: str) -> str:
     """
     Converts a GeoJSON file to a shapefile (.shp) for use as AOI clip.

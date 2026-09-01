@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
-        epsg: int, geo_info: dict) -> tuple[list, dict]:
+        epsg: int, geo_info: dict, clerk_id: str = "") -> tuple[list, dict]:
     """
     Phase 2 for zonal_grid pipeline (Detección de Fallas).
     1. Creates a vector grid of square cells over the image extent
@@ -87,7 +87,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
     # ── Upload + register outputs ─────────────────────────────────────────────
     # 1. Probabilities raster (the band used for stats)
     cog_path = geo_utils.convert_to_cog(prob_raster, job_id, "fallas_cog")
-    cog_gcs  = f"results/{job_id}/fallas_raster.tif"  # internal only
+    cog_gcs  = f"users/{clerk_id}/jobs/{job_id}/fallas_raster.tif"  # internal only
     geo_utils.upload_to_gcs(cog_path, cog_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="raster_cog",
@@ -97,7 +97,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
     )
 
     # 2. GeoJSON grid
-    gj_gcs = f"results/{job_id}/fallas.geojson"
+    gj_gcs = f"users/{clerk_id}/jobs/{job_id}/fallas.geojson"
     geo_utils.upload_to_gcs(geojson_path, gj_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="geojson",
@@ -107,7 +107,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
     )
 
     # 3. Shapefile zip
-    zip_gcs = f"results/{job_id}/fallas.zip"
+    zip_gcs = f"users/{clerk_id}/jobs/{job_id}/fallas.zip"
     geo_utils.upload_to_gcs(zip_path, zip_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="shapefile",

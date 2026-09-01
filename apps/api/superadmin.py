@@ -406,6 +406,15 @@ def admin_reprocess_image(image_id: str, _: str = Depends(require_superadmin)):
     enqueue_raster_ingest(job_id=job_id, image_id=image_id, gcs_path=img["gcs_path"], filename=img["filename"])
     return {"reprocessing": True, "image_id": image_id, "job_id": job_id}
 
+
+@router.post("/images/{image_id}/reset-status")
+def admin_reset_image_status(image_id: str, _: str = Depends(require_superadmin)):
+    """Reset a stuck/failed image back to ready."""
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("UPDATE images SET status='ready' WHERE id=%s", (image_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"reset": True, "image_id": image_id}
+
 # ── Vectors (admin) ───────────────────────────────────────────────────────────
 
 @router.get("/vectors")

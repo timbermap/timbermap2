@@ -5,36 +5,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def enqueue_raster_ingest(job_id: str, image_id: str, gcs_path: str, filename: str):
+def enqueue_raster_ingest(job_id: str, image_id: str, gcs_path: str, filename: str, clerk_id: str = ""):
+    """Trigger a Cloud Run Job execution for raster ingest.
+    No timeout limits — jobs run up to 24h.
+    """
     try:
-        client = tasks_v2.CloudTasksClient()
+        from google.cloud import run_v2
         project = os.getenv("GCP_PROJECT", "timbermap-prod")
-        region = "us-central1"
-        queue = "raster-ingest"
-        worker_url = os.getenv("RASTER_WORKER_URL", "http://localhost:8001")
+        region  = "us-central1"
+        job_name = f"projects/{project}/locations/{region}/jobs/timbermap-raster-ingest"
 
-        parent = client.queue_path(project, region, queue)
-
-        payload = json.dumps({
-            "job_id": job_id,
-            "image_id": image_id,
-            "gcs_path": gcs_path,
-            "filename": filename,
-        }).encode()
-
-        task = {
-            "http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "url": f"{worker_url}/ingest",
-                "body": payload,
-                "headers": {"Content-Type": "application/json"},
-            }
-        }
-
-        client.create_task(parent=parent, task=task)
-        print(f"Enqueued raster ingest job {job_id}")
+        client = run_v2.JobsClient()
+        request = run_v2.RunJobRequest(
+            name=job_name,
+            overrides=run_v2.RunJobRequest.Overrides(
+                container_overrides=[
+                    run_v2.RunJobRequest.Overrides.ContainerOverride(
+                        env=[
+                            run_v2.EnvVar(name="INGEST_JOB_ID",   value=job_id),
+                            run_v2.EnvVar(name="INGEST_IMAGE_ID", value=image_id),
+                            run_v2.EnvVar(name="INGEST_GCS_PATH", value=gcs_path),
+                            run_v2.EnvVar(name="INGEST_FILENAME", value=filename),
+                            run_v2.EnvVar(name="INGEST_CLERK_ID", value=clerk_id),
+                        ]
+                    )
+                ]
+            ),
+        )
+        client.run_job(request=request)
+        print(f"Triggered Cloud Run Job for raster ingest {job_id}")
     except Exception as e:
-        print(f"Failed to enqueue task: {e}")
+        print(f"Failed to trigger raster ingest job: {e}")
 
 def enqueue_vector_ingest(job_id: str, vector_id: str, gcs_path: str, filename: str):
     try:
@@ -68,7 +69,7 @@ def enqueue_vector_ingest(job_id: str, vector_id: str, gcs_path: str, filename: 
         print(f"Failed to enqueue task: {e}")
 
 
-def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, target_resolution_m: float = None):
+def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, target_resolution_m: float = None, clerk_id: str = ""):
     try:
         client = tasks_v2.CloudTasksClient()
         project = os.getenv("GCP_PROJECT", "timbermap-prod")
@@ -83,6 +84,7 @@ def enqueue_raster_transform(job_id: str, image_id: str, target_epsg: str, targe
             "image_id": image_id,
             "target_epsg": target_epsg,
             "target_resolution_m": target_resolution_m,
+            "clerk_id": clerk_id,
         }).encode()
 
         task = {
@@ -165,7 +167,6 @@ def enqueue_ml_job(job_id: str, model_id: str, image_id: str,
                     "audience": worker_url,
                 },
             },
-            "dispatch_deadline": {"seconds": 1800},
         }
 
         client.create_task(parent=parent, task=task)
@@ -175,7 +176,7 @@ def enqueue_ml_job(job_id: str, model_id: str, image_id: str,
         # Non-fatal — job is already in DB with status queued
 
 
-def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: dict):
+def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: dict, clerk_id: str = ""):
     """
     Enqueues a raster analysis job (e.g. gap_detection) to the raster worker.
     Uses the same raster-ingest queue but hits /analyze/gaps endpoint.
@@ -190,9 +191,10 @@ def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: d
         parent = client.queue_path(project, region, queue)
 
         payload = json.dumps({
-            "job_id":   job_id,
-            "image_id": image_id,
-            "params":   params or {},
+            "job_id":    job_id,
+            "image_id":  image_id,
+            "params":    params or {},
+            "clerk_id":  clerk_id,
         }).encode()
 
         task = {
@@ -202,7 +204,6 @@ def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: d
                 "body": payload,
                 "headers": {"Content-Type": "application/json"},
             },
-            "dispatch_deadline": {"seconds": 1800},
         }
 
         client.create_task(parent=parent, task=task)

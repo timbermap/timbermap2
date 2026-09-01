@@ -162,7 +162,7 @@ function OutputsPanel({ jobId, clerkId, api, imageId, jobSummary, onDeleted }: {
 }
 
 // ── Job row ───────────────────────────────────────────────────────────────────
-function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; api: string; onRefresh: () => void }) {
+function JobRow({ job, clerkId, api, onRefresh, isHighlighted }: { job: Job; clerkId: string; api: string; onRefresh: () => void; isHighlighted?: boolean }) {
   const [expanded, setExpanded]     = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [deleting, setDeleting]     = useState(false)
@@ -181,7 +181,7 @@ function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; a
 
   async function handleCancel() {
     setCancelling(true)
-    try { await fetch(`${api}/jobs/${job.id}?clerk_id=${clerkId}`, { method: 'DELETE' }); onRefresh() }
+    try { await fetch(`${api}/jobs/${job.id}/cancel?clerk_id=${clerkId}`, { method: 'POST' }); onRefresh() }
     catch (e) { console.error(e) } finally { setCancelling(false) }
   }
 
@@ -202,7 +202,7 @@ function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; a
 
   return (
     <>
-      <tr className={`border-b border-gray-50 transition-colors ${isML && job.status === 'done' ? 'cursor-pointer hover:bg-[#EEF7F6]/40' : 'hover:bg-gray-50/50'}`}
+      <tr className={`border-b border-gray-50 transition-colors duration-700 ${isHighlighted ? 'bg-[#EEF7F6]' : isML && job.status === 'done' ? 'cursor-pointer hover:bg-[#EEF7F6]/40' : 'hover:bg-gray-50/50'}`}
         onClick={() => isML && job.status === 'done' && setExpanded(e => !e)}>
 
         {/* Type */}
@@ -238,16 +238,20 @@ function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; a
         </td>
 
         {/* Status */}
-        <td className="px-4 py-3.5">
+        <td className="px-4 py-3.5 w-28 whitespace-nowrap">
           <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${cfg.bg} ${cfg.text}`}>
             {job.status === 'running' ? <SpinIcon /> : <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />}
             {job.status}
           </span>
         </td>
 
-        {/* Progress */}
+        {/* Progress / Error message */}
         <td className="px-4 py-3.5 text-xs text-gray-500">
-          {progress ? (
+          {job.status === 'failed' && job.message ? (
+            <span className="text-red-500 truncate max-w-[200px] block" title={job.message}>
+              {job.message.length > 80 ? job.message.slice(0, 80) + '…' : job.message}
+            </span>
+          ) : progress ? (
             <div className="flex items-center gap-2">
               <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-[#6AA8A0] rounded-full transition-all" style={{ width: progress }} />
@@ -264,7 +268,7 @@ function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; a
         <td className="px-4 py-3.5 text-xs text-gray-400">{fmtDuration(job.started_at, job.finished_at)}</td>
 
         {/* Actions */}
-        <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+        <td className="px-4 py-3.5 w-28" onClick={e => e.stopPropagation()}>
           <div className="flex items-center gap-1.5">
             {(job.status === 'running' || job.status === 'queued') ? (
               /* Active jobs: Cancel button (cancels AND deletes) */
@@ -315,8 +319,8 @@ function JobRow({ job, clerkId, api, onRefresh }: { job: Job; clerkId: string; a
 }
 
 // ── Accordion ─────────────────────────────────────────────────────────────────
-function JobAccordion({ label, jobs, clerkId, api, onRefresh, defaultOpen = false }: {
-  label: string; jobs: Job[]; clerkId: string; api: string; onRefresh: () => void; defaultOpen?: boolean
+function JobAccordion({ label, jobs, clerkId, api, onRefresh, defaultOpen = false, highlighted }: {
+  label: string; jobs: Job[]; clerkId: string; api: string; onRefresh: () => void; defaultOpen?: boolean; highlighted: Set<string>
 }) {
   const [open, setOpen]   = useState(defaultOpen)
   const [page, setPage]   = useState(1)
@@ -354,7 +358,7 @@ function JobAccordion({ label, jobs, clerkId, api, onRefresh, defaultOpen = fals
                 </tr>
               </thead>
               <tbody>
-                {paged.map(job => <JobRow key={job.id} job={job} clerkId={clerkId} api={api} onRefresh={onRefresh} />)}
+                {paged.map(job => <JobRow key={job.id} job={job} clerkId={clerkId} api={api} onRefresh={onRefresh} isHighlighted={highlighted.has(job.id)} />)}
               </tbody>
             </table>
           </div>
@@ -383,7 +387,10 @@ export default function JobsPage() {
   const [loading, setLoading]   = useState(true)
   const [confirmAll, setConfirmAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
-  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
+  const prevStatusRef  = useRef<Record<string, string>>({})
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
+  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
   const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     if (!isLoaded || !user) { setLoading(false); return }
@@ -391,7 +398,19 @@ export default function JobsPage() {
       const res = await fetch(`${API}/jobs/${user.id}`, { signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setJobs(data.jobs || [])
+      const newJobs: Job[] = data.jobs || []
+      const changed = new Set<string>()
+      newJobs.forEach(j => {
+        const prev = prevStatusRef.current[j.id]
+        if (prev !== undefined && prev !== j.status) changed.add(j.id)
+        prevStatusRef.current[j.id] = j.status
+      })
+      setJobs(newJobs)
+      if (changed.size > 0) {
+        if (highlightTimer.current) clearTimeout(highlightTimer.current)
+        setHighlighted(changed)
+        highlightTimer.current = setTimeout(() => setHighlighted(new Set()), 1500)
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
     } finally { setLoading(false) }
@@ -476,7 +495,7 @@ export default function JobsPage() {
         <div>
           {grouped.map(g => (
             <JobAccordion key={g.key} label={g.label} jobs={g.jobs} defaultOpen={g.defaultOpen}
-              clerkId={user?.id || ''} api={API} onRefresh={() => fetchJobs()} />
+              clerkId={user?.id || ''} api={API} onRefresh={() => fetchJobs()} highlighted={highlighted} />
           ))}
           <div className="flex justify-end mt-2">
             <button onClick={() => setConfirmAll(true)}

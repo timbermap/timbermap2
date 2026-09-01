@@ -39,7 +39,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://timbermap.com",
-        "https://timbermap-web-788407107542.us-central1.run.app"
+        "https://timbermap-web-tjrp7tcqaa-uc.a.run.app",
+        "https://timbermap-web-788407107542.us-central1.run.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -51,21 +52,15 @@ app.include_router(stats_router, prefix="/stats", tags=["stats"])
 app.include_router(superadmin_router)
 app.include_router(models_router)
 
-CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-788407107542.us-central1.run.app")
+CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-tjrp7tcqaa-uc.a.run.app")
+CLEANUP_INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")
+CLEANUP_HEADERS = {"x-internal-secret": CLEANUP_INTERNAL_SECRET} if CLEANUP_INTERNAL_SECRET else {}
 GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
 
 
 def get_db_conn():
-    import psycopg2
-    import psycopg2.extras
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "127.0.0.1"),
-        port=os.getenv("DB_PORT", 5432),
-        dbname=os.getenv("DB_NAME", "timbermap"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD"),
-        cursor_factory=psycopg2.extras.RealDictCursor,
-    )
+    from database import get_conn
+    return get_conn()
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -85,6 +80,7 @@ class ConfirmUploadRequest(BaseModel):
     gcs_path: str
     filesize: Optional[int] = 0
     file_type: str = "raster"
+    file_id: Optional[str] = None
 
 class TransformImageRequest(BaseModel):
     clerk_id: str
@@ -123,16 +119,26 @@ def health():
 @app.post("/upload/signed-url")
 def get_signed_url(req: SignedUrlRequest):
     try:
+        import uuid as _uuid
         ensure_user(req.clerk_id, req.email, req.username)
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
-        folder = "rasters" if req.file_type == "raster" else "vectors"
-        blob = bucket.blob(f"users/{req.clerk_id}/{folder}/{req.filename}")
+        if req.file_type == "raster":
+            # Use a UUID as the GCS filename to avoid collisions on same-name uploads.
+            # The original filename is preserved in the DB.
+            ext = "." + req.filename.rsplit(".", 1)[-1] if "." in req.filename else ""
+            file_id = str(_uuid.uuid4())
+            gcs_path = f"users/{req.clerk_id}/rasters/{file_id}{ext}"
+        else:
+            file_id = None
+            gcs_path = f"users/{req.clerk_id}/vectors/{req.filename}"
+        blob = bucket.blob(gcs_path)
+        # Signed URL PUT — GCS supports up to 5TB, 6h expiration for large files
         url = blob.generate_signed_url(
-            version="v4", expiration=timedelta(hours=2),
+            version="v4", expiration=timedelta(hours=6),
             method="PUT", content_type=req.content_type,
         )
-        return {"url": url, "gcs_path": f"users/{req.clerk_id}/{folder}/{req.filename}"}
+        return {"url": url, "gcs_path": gcs_path, "file_id": file_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -144,11 +150,11 @@ def confirm_upload(req: ConfirmUploadRequest):
         if not user_id:
             raise HTTPException(status_code=404, detail="User not found")
         if req.file_type == "raster":
-            file_id = insert_image(user_id, req.filename, req.gcs_path, req.filesize)
+            file_id = insert_image(user_id, req.filename, req.gcs_path, req.filesize, req.file_id)
             job_id = insert_job(user_id, "raster_ingest", {
                 "image_id": str(file_id), "gcs_path": req.gcs_path, "filename": req.filename
             })
-            enqueue_raster_ingest(str(job_id), str(file_id), req.gcs_path, req.filename)
+            enqueue_raster_ingest(str(job_id), str(file_id), req.gcs_path, req.filename, req.clerk_id)
         else:
             file_id = insert_vector(user_id, req.filename, req.gcs_path, req.filesize)
             job_id = insert_job(user_id, "vector_ingest", {
@@ -184,10 +190,32 @@ def transform_image(req: TransformImageRequest):
             "image_id": req.image_id, "new_epsg": req.new_epsg,
             "new_resolution_x": req.new_resolution_x, "new_resolution_y": req.new_resolution_y,
         })
-        if req.new_epsg:
-            res_m = req.new_resolution_x or req.new_resolution_y or None
-            enqueue_raster_transform(str(job_id), req.image_id, req.new_epsg, res_m)
-        return {"job_id": str(job_id), "status": "queued"}
+        res_m = req.new_resolution_x or req.new_resolution_y or None
+        if req.new_epsg or res_m:
+            target_epsg = req.new_epsg
+            if not target_epsg:
+                conn = get_db_conn()
+                cur = conn.cursor()
+                cur.execute("SELECT epsg, bbox_minx, bbox_miny, bbox_maxx, bbox_maxy FROM images WHERE id = %s", (req.image_id,))
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                current_epsg = row["epsg"] if row and row["epsg"] else None
+                # If image is in a geographic CRS (degrees) and user wants metric resolution,
+                # auto-select the UTM zone from the image centroid
+                if res_m and current_epsg in ("4326", "4269", "4258", "4230") :
+                    minx = row["bbox_minx"]; maxx = row["bbox_maxx"]
+                    miny = row["bbox_miny"]; maxy = row["bbox_maxy"]
+                    if minx is not None and miny is not None:
+                        lon = (minx + maxx) / 2
+                        lat = (miny + maxy) / 2
+                        zone = int((lon + 180) / 6) + 1
+                        target_epsg = str(32600 + zone if lat >= 0 else 32700 + zone)
+                    else:
+                        target_epsg = current_epsg
+                else:
+                    target_epsg = current_epsg
+            enqueue_raster_transform(str(job_id), req.image_id, target_epsg, res_m, req.clerk_id)
+        return {"job_id": str(job_id), "status": "queued", "target_epsg": target_epsg if (req.new_epsg or res_m) else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -203,7 +231,7 @@ def thumbnail_image(image_id: str, clerk_id: str):
     try:
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob(f"users/thumbnails/{image_id}.jpg")
+        blob = bucket.blob(f"users/{clerk_id}/thumbnails/{image_id}.jpg")
         url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
         return {"url": url}
     except Exception as e:
@@ -219,7 +247,7 @@ def delete_image(image_id: str, clerk_id: str):
     if not any(str(i["id"]) == image_id for i in images):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/raster/{image_id}", timeout=60)
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/raster/{image_id}", headers=CLEANUP_HEADERS, timeout=60)
         r.raise_for_status()
         return {"deleted": "image", "image_id": image_id}
     except Exception as e:
@@ -283,7 +311,7 @@ def delete_vector(vector_id: str, clerk_id: str):
     if not any(str(v["id"]) == vector_id for v in vectors):
         raise HTTPException(status_code=403, detail="Not authorized or not found")
     try:
-        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/vector/{vector_id}", timeout=60)
+        r = http_requests.delete(f"{CLEANUP_WORKER_URL}/vector/{vector_id}", headers=CLEANUP_HEADERS, timeout=60)
         r.raise_for_status()
         return {"deleted": "vector", "vector_id": vector_id}
     except Exception as e:
@@ -336,13 +364,24 @@ def preview_vector(vector_id: str, clerk_id: str):
     if not row or not row["path"]:
         raise HTTPException(status_code=404, detail="No geometry")
     minx, miny, maxx, maxy = float(row["minx"]), float(row["miny"]), float(row["maxx"]), float(row["maxy"])
-    w, h = maxx - minx, maxy - miny
-    pad = max(w, h) * 0.08
-    vb = f"{minx - pad} {-maxy - pad} {w + 2*pad} {h + 2*pad}"
-    sw = max(w, h) * 0.008
+    w = maxx - minx
+    h = maxy - miny
+    # Make square with padding to center smaller dimension
+    size = max(w, h)
+    pad  = size * 0.10
+    cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+    half = size / 2 + pad
+    # ST_AsSVG flips Y (SVG Y↓, geo Y↑) — viewBox must account for that
+    vb_x  = cx - half
+    vb_y  = -(cy + half)   # negate because ST_AsSVG negates Y
+    vb_w  = half * 2
+    vb_h  = half * 2
+    sw = size * 0.006
     svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">'
-        f'<path d="{row["path"]}" fill="#6AA8A0" fill-opacity="0.35" stroke="#3D7A72" stroke-width="{sw}" stroke-linejoin="round"/>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x} {vb_y} {vb_w} {vb_h}" '
+        f'preserveAspectRatio="xMidYMid meet">'
+        f'<path d="{row["path"]}" fill="#6AA8A0" fill-opacity="0.40" stroke="#3D7A72" '
+        f'stroke-width="{sw}" stroke-linejoin="round"/>'
         f'</svg>'
     )
     return Response(
@@ -361,7 +400,7 @@ def create_vector_from_aoi(req: AoiRequest):
 
         name     = req.name.strip() or "AOI"
         filename = f"{name}.geojson"
-        gcs_path = f"aoi/{req.clerk_id}/{name}.geojson"
+        gcs_path = f"users/{req.clerk_id}/vectors/{name}.geojson"
 
         file_id = insert_vector(user_id, filename, gcs_path, 0)
         table   = f"vec_{str(file_id).replace('-', '_')}"
@@ -396,15 +435,11 @@ def create_vector_from_aoi(req: AoiRequest):
         conn.close()
 
         # Upload GeoJSON to GCS so ML worker can download it as AOI
-        try:
-            import io
-            client = storage.Client()
-            blob = client.bucket(GCS_BUCKET).blob(gcs_path)
-            feature = {"type": "Feature", "geometry": req.geojson, "properties": {"name": name}}
-            geojson_fc = json_lib.dumps({"type": "FeatureCollection", "features": [feature]})
-            blob.upload_from_string(geojson_fc, content_type="application/json")
-        except Exception as e:
-            print(f"Warning: could not upload AOI to GCS: {e}")
+        client = storage.Client()
+        blob = client.bucket(GCS_BUCKET).blob(gcs_path)
+        feature = {"type": "Feature", "geometry": req.geojson, "properties": {"name": name}}
+        geojson_fc = json_lib.dumps({"type": "FeatureCollection", "features": [feature]})
+        blob.upload_from_string(geojson_fc, content_type="application/json")
 
         return {"vector_id": str(file_id), "name": filename, "area_ha": area_ha}
     except HTTPException:
@@ -509,6 +544,43 @@ def list_jobs(clerk_id: str):
 
 
 
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, clerk_id: str):
+    """Marks a queued/running job as cancelled so workers stop at next checkpoint."""
+    user_id = get_user_id(clerk_id)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    conn = get_db_conn()
+    cur  = conn.cursor()
+    # Get job info before cancelling so we can restore related resources
+    cur.execute("SELECT input_ref, type, input_image_id, input_vector_id FROM jobs WHERE id = %s AND owner_id = %s", (job_id, str(user_id)))
+    job_row = cur.fetchone()
+    cur.execute("""
+        UPDATE jobs SET status = 'cancelled', message = 'Cancelled by user', finished_at = now()
+        WHERE id = %s AND owner_id = %s AND status IN ('queued', 'running')
+    """, (job_id, str(user_id)))
+    updated = cur.rowcount
+    # Restore related image/vector to 'ready' so they're not stuck
+    if updated and job_row:
+        input_ref = job_row["input_ref"] or {}
+        if isinstance(input_ref, str):
+            import json as _j; input_ref = _j.loads(input_ref)
+        job_type = job_row["type"] or ""
+        # ML jobs store image/vector id directly; ingest/transform jobs use input_ref
+        image_id = job_row.get("input_image_id") or input_ref.get("image_id")
+        vector_id = job_row.get("input_vector_id") or input_ref.get("vector_id")
+        if image_id:
+            cur.execute("UPDATE images SET status = 'ready' WHERE id = %s AND owner_id = %s", (image_id, str(user_id)))
+        if vector_id:
+            cur.execute("UPDATE vectors SET status = 'ready' WHERE id = %s AND owner_id = %s", (vector_id, str(user_id)))
+    conn.commit()
+    cur.close()
+    conn.close()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Job not found or already finished")
+    return {"status": "cancelled"}
+
+
 @app.delete("/jobs/{job_id}")
 def remove_job(job_id: str, clerk_id: str):
     """Deletes a job, its DB outputs, and GCS files."""
@@ -569,6 +641,7 @@ def run_model(req: RunModelRequest):
                 model_id=req.model_id,
                 image_id=req.image_id,
                 params=raster_params,
+                clerk_id=req.clerk_id,
             )
         else:
             enqueue_ml_job(
@@ -671,7 +744,7 @@ def get_layers(clerk_id: str):
     for img in images:
         if img.get("status") == "ready":
             try:
-                cog_path = f"users/cogs/{img['id']}.tif"
+                cog_path = f"users/{clerk_id}/cogs/{img['id']}.tif"
                 blob = bucket.blob(cog_path)
                 signed_url = blob.generate_signed_url(
                     version="v4", expiration=timedelta(days=7), method="GET"
@@ -693,7 +766,7 @@ def get_layers(clerk_id: str):
             except Exception:
                 pass
 
-    api_url = os.getenv("API_PUBLIC_URL", "https://timbermap-api-788407107542.us-central1.run.app")
+    api_url = os.getenv("API_PUBLIC_URL", "https://timbermap-api-tjrp7tcqaa-uc.a.run.app")
     for vec in vectors:
         if vec.get("status") == "ready":
             bbox = None
@@ -748,6 +821,7 @@ async def get_catalog_models(x_clerk_id: str = Header(None)):
             m.name,
             m.description,
             m.pipeline_type,
+            COALESCE(m.output_types, '[]'::jsonb) AS output_types,
             COALESCE(m.is_free, false) AS is_free,
             EXISTS(
                 SELECT 1 FROM user_model_permissions um
@@ -859,7 +933,7 @@ async def request_upgrade(
                     <p><b>User:</b> {user['username']} ({user['email']})</p>
                     <p><b>Model:</b> {model_name}</p>
                     <p><b>Message:</b><br>{message}</p>
-                    <p><a href="https://timbermap-web-788407107542.us-central1.run.app/dashboard/admin">
+                    <p><a href="https://timbermap-web-tjrp7tcqaa-uc.a.run.app/dashboard/admin">
                         Open admin panel →
                     </a></p>
                 """
@@ -1042,7 +1116,7 @@ async def approve_upgrade_request(request_id: str, x_clerk_id: str = Header(None
                     <h2>Your request was approved!</h2>
                     <p>Hi {req['username']},</p>
                     <p>You now have access to <b>{req['model_name']}</b>.</p>
-                    <p>Head to your <a href="https://timbermap-web-788407107542.us-central1.run.app/dashboard/models">models page</a> to start using it.</p>
+                    <p>Head to your <a href="https://timbermap-web-tjrp7tcqaa-uc.a.run.app/dashboard/models">models page</a> to start using it.</p>
                     <br>
                     <p>— The Timbermap team</p>
                 """

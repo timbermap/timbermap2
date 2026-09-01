@@ -19,7 +19,8 @@ log = logging.getLogger(__name__)
 
 
 def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
-        epsg: int, geo_info: dict, image_name: str = "output") -> tuple[list, dict]:
+        epsg: int, geo_info: dict, clerk_id: str = "",
+        image_name: str = "output") -> tuple[list, dict]:
 
     log.info("Hough lines — job=%s  config=%s", job_id, cfg)
 
@@ -91,7 +92,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
 
     # Output 1 — Probability raster: uploaded but NOT visualizable (in memory only)
     cog1     = geo_utils.convert_to_cog(prob_raster, job_id, "prob_cog")
-    cog1_gcs = f"results/{job_id}/probabilities.tif"
+    cog1_gcs = f"users/{clerk_id}/jobs/{job_id}/probabilities.tif"
     geo_utils.upload_to_gcs(cog1, cog1_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="raster_cog",
@@ -102,7 +103,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
 
     # Output 2 — Skeleton raster: visible
     cog2     = geo_utils.convert_to_cog(skeleton_path, job_id, "skeleton_cog")
-    cog2_gcs = f"results/{job_id}/{image_name}_skeleton.tif"
+    cog2_gcs = f"users/{clerk_id}/jobs/{job_id}/{image_name}_skeleton.tif"
     geo_utils.upload_to_gcs(cog2, cog2_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="raster_cog",
@@ -117,7 +118,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
     gdf.to_file(shp_path)
     zip_path = f"/tmp/{job_id}_transectas.zip"
     geo_utils.zip_shapefile(shp_path, zip_path)
-    zip_gcs = f"results/{job_id}/{image_name}_transectas.zip"
+    zip_gcs = f"users/{clerk_id}/jobs/{job_id}/{image_name}_transectas.zip"
     geo_utils.upload_to_gcs(zip_path, zip_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="shapefile",
@@ -134,7 +135,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
         grid_gdf.to_file(grid_shp)
         grid_zip = f"/tmp/{job_id}_grid.zip"
         geo_utils.zip_shapefile(grid_shp, grid_zip)
-        grid_gcs = f"results/{job_id}/{image_name}_grid.zip"
+        grid_gcs = f"users/{clerk_id}/jobs/{job_id}/{image_name}_grid.zip"
         geo_utils.upload_to_gcs(grid_zip, grid_gcs)
         db.insert_job_output(
             job_id=job_id, output_type="shapefile",

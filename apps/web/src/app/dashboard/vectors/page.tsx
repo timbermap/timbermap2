@@ -21,7 +21,7 @@ type Vector = {
   geometry_type: string | null; area_ha: number | null
   filesize: number | null; status: string; created_at: string
 }
-type Job = { id: string; type: string; status: string; input_ref: Record<string, unknown> | null }
+type Job = { id: string; type: string; status: string; input_ref: Record<string, unknown> | null; input_vector_id?: string | null }
 type UploadItem = { file: File; progress: number; status: 'waiting'|'uploading'|'done'|'error'; message: string }
 
 const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z"/><path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z"/></svg>
@@ -30,12 +30,15 @@ const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 
 const ReprojIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
 const MapIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
 const SpinIcon = () => <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+const StopIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path d="M5.25 3A2.25 2.25 0 0 0 3 5.25v9.5A2.25 2.25 0 0 0 5.25 17h9.5A2.25 2.25 0 0 0 17 14.75v-9.5A2.25 2.25 0 0 0 14.75 3h-9.5Z"/></svg>
 
 export default function VectorsPage() {
   const { user, isLoaded } = useUser()
   const [uploads, setUploads]         = useState<UploadItem[]>([])
   const [vectors, setVectors]         = useState<Vector[]>([])
   const [activeVectorIds, setActiveVectorIds] = useState<Set<string>>(new Set())
+  const [activeJobMap, setActiveJobMap]       = useState<Record<string, string>>({})
+  const [cancellingVec, setCancellingVec]     = useState<string | null>(null)
   const [loading, setLoading]         = useState(true)
   const [selectedId, setSelectedId]             = useState<string | null>(null)
   const [showTransform, setShowTransform]       = useState(false)
@@ -49,12 +52,15 @@ export default function VectorsPage() {
   const [page, setPage]       = useState(1)
   const [confirmAll, setConfirmAll]   = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
-  const [previewUrls, setPreviewUrls]   = useState<Record<string, string>>({})
+  const [previewSvgs, setPreviewSvgs]   = useState<Record<string, string>>({})
   const [vectorBboxes, setVectorBboxes] = useState<Record<string, string>>({})
   const [previewId, setPreviewId]       = useState<string | null>(null)
   const fetchedPreviewIds = useRef<Set<string>>(new Set())
+  const prevStatusRef     = useRef<Record<string, string>>({})
+  const highlightTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
-  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
+  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
   const fetchData = useCallback(async () => {
     if (!isLoaded || !user) { setLoading(false); return }
@@ -66,21 +72,46 @@ export default function VectorsPage() {
       if (!vecRes.ok || !jobsRes.ok) throw new Error('Fetch failed')
       const vecData  = await vecRes.json()
       const jobsData = await jobsRes.json()
-      setVectors(vecData.vectors || [])
+      const vecs: Vector[] = vecData.vectors || []
+      const changed = new Set<string>()
+      vecs.forEach(v => {
+        const prev = prevStatusRef.current[v.id]
+        if (prev !== undefined && prev !== v.status) changed.add(v.id)
+        prevStatusRef.current[v.id] = v.status
+      })
+      setVectors(vecs)
+      if (changed.size > 0) {
+        if (highlightTimer.current) clearTimeout(highlightTimer.current)
+        setHighlighted(changed)
+        highlightTimer.current = setTimeout(() => setHighlighted(new Set()), 1500)
+      }
       const active = new Set<string>()
+      const jobMap: Record<string, string> = {}
       for (const job of (jobsData.jobs || []) as Job[]) {
         if (job.status === 'queued' || job.status === 'running') {
-          const vid = job.input_ref?.vector_id as string | undefined
-          if (vid) active.add(vid)
+          const vid = (job.input_ref?.vector_id as string | undefined) || job.input_vector_id || undefined
+          if (vid) { active.add(vid); jobMap[vid] = job.id }
         }
       }
       setActiveVectorIds(active)
+      setActiveJobMap(jobMap)
     } catch (e) { console.error('fetchData failed:', e) }
     finally { setLoading(false) }
   }, [user, isLoaded, API])
 
   useEffect(() => { if (isLoaded && user) fetchData() }, [isLoaded, user, fetchData])
   useEffect(() => { const t = setInterval(fetchData, 5000); return () => clearInterval(t) }, [fetchData])
+
+  async function handleCancelVectorJob(vectorId: string) {
+    const jobId = activeJobMap[vectorId]
+    if (!jobId || !user) return
+    setCancellingVec(vectorId)
+    try {
+      await fetch(`${API}/jobs/${jobId}/cancel?clerk_id=${user.id}`, { method: 'POST' })
+      await fetchData()
+    } catch (e) { console.error(e) }
+    finally { setCancellingVec(null) }
+  }
 
   useEffect(() => {
     if (!user || !vectors.length) return
@@ -93,19 +124,18 @@ export default function VectorsPage() {
           .then(async res => {
             const bbox = res.headers.get('X-Bbox')
             const svg  = await res.text()
-            const url  = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
-            return { id: v.id, url, bbox }
+            return { id: v.id, svg, bbox }
           })
-          .catch(() => ({ id: v.id, url: null, bbox: null }))
+          .catch(() => ({ id: v.id, svg: null, bbox: null }))
       )
     ).then(results => {
-      const newUrls: Record<string, string> = {}
+      const newSvgs: Record<string, string> = {}
       const newBboxes: Record<string, string> = {}
-      for (const { id, url, bbox } of results) {
-        if (url)  newUrls[id]   = url
+      for (const { id, svg, bbox } of results) {
+        if (svg)  newSvgs[id]   = svg
         if (bbox) newBboxes[id] = bbox
       }
-      setPreviewUrls(prev  => ({ ...prev,  ...newUrls   }))
+      setPreviewSvgs(prev  => ({ ...prev, ...newSvgs   }))
       setVectorBboxes(prev => ({ ...prev, ...newBboxes }))
     })
   }, [vectors, user, API])
@@ -287,7 +317,7 @@ export default function VectorsPage() {
       )}
 
       {/* Preview modal */}
-      {previewId && previewUrls[previewId] && (
+      {previewId && previewSvgs[previewId] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => setPreviewId(null)}>
           <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
@@ -298,9 +328,9 @@ export default function VectorsPage() {
               </svg>
             </button>
             <p className="text-white/50 text-xs uppercase tracking-widest text-center mb-3">Preview vector</p>
-            <div className="bg-white rounded-2xl shadow-2xl p-6">
-              <img src={previewUrls[previewId]} alt={vectors.find(v => v.id === previewId)?.filename}
-                className="w-full object-contain max-h-[70vh]" />
+            <div className="bg-white rounded-2xl shadow-2xl p-6 flex items-center justify-center" style={{ minHeight: 300 }}>
+              <div className="w-full h-full" style={{ maxHeight: '70vh' }}
+                dangerouslySetInnerHTML={{ __html: previewSvgs[previewId].replace('<svg ', '<svg width="100%" height="100%" style="max-height:65vh" ') }} />
             </div>
             <p className="text-white/70 text-xs text-center mt-3 truncate">
               {vectors.find(v => v.id === previewId)?.filename}
@@ -446,13 +476,13 @@ export default function VectorsPage() {
                   {paged.map(v => {
                     const isActive = activeVectorIds.has(v.id)
                     return (
-                      <tr key={v.id} className="border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors">
+                      <tr key={v.id} className={`border-b border-gray-50 transition-colors duration-700 ${highlighted.has(v.id) ? 'bg-[#EEF7F6]' : 'hover:bg-[#F4F9F9]'}`}>
                         {/* Preview column */}
                         <td className="px-4 py-3">
-                          {previewUrls[v.id] ? (
-                            <img src={previewUrls[v.id]} alt={v.filename}
-                              onClick={() => setPreviewId(v.id)}
-                              className="w-10 h-10 object-contain rounded-lg border border-gray-100 shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 transition-all bg-[#F4F9F9]" />
+                          {previewSvgs[v.id] ? (
+                            <div onClick={() => setPreviewId(v.id)}
+                              className="w-10 h-10 rounded-lg border border-gray-100 shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 transition-all bg-[#F4F9F9] flex items-center justify-center overflow-hidden p-0.5"
+                              dangerouslySetInnerHTML={{ __html: previewSvgs[v.id].replace('<svg ', '<svg width="100%" height="100%" ') }} />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
                               {v.status === 'ready' ? (
@@ -474,41 +504,40 @@ export default function VectorsPage() {
                         <td className="px-4 py-3 text-gray-500 text-xs">{formatSize(v.filesize)}</td>
                         <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDate(v.created_at)}</td>
                         {/* Status */}
-                        <td className="px-4 py-3">
-                          {isActive ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 font-medium">
-                              <SpinIcon />Processing
+                        <td className="px-4 py-3 w-36 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1.5 ${isActive ? 'bg-amber-50 text-amber-600' : statusBadge[v.status] || 'bg-gray-50 text-gray-500'}`}>
+                              {isActive && <SpinIcon />}{isActive ? 'Processing' : v.status}
                             </span>
-                          ) : (
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusBadge[v.status] || 'bg-gray-50 text-gray-500'}`}>
-                              {v.status}
-                            </span>
-                          )}
+                            {isActive && (
+                              <button onClick={() => handleCancelVectorJob(v.id)} disabled={cancellingVec === v.id}
+                                title="Cancel job"
+                                className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40">
+                                {cancellingVec === v.id ? <SpinIcon /> : <StopIcon />}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* Actions: Map → Reproject → Download → Delete */}
-                        <td className="px-4 py-3">
-                          {isDeleting && deletingId === v.id ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-400"><SpinIcon />Deleting...</span>
-                          ) : (
-                            <div className="flex items-center gap-0.5">
-                              <button onClick={() => viewOnMap(v)} title="View on map" disabled={v.status !== 'ready' || isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <MapIcon />
-                              </button>
-                              <button onClick={() => { setSelectedId(v.id); setShowTransform(true) }} title="Reproject" disabled={isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <ReprojIcon />
-                              </button>
-                              <button onClick={() => handleDownload(v.id)} title="Download" disabled={v.status !== 'ready' || isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <DownloadIcon />
-                              </button>
-                              <button onClick={() => { setDeletingId(v.id); setShowDeleteConfirm(true) }} title="Delete" disabled={isActive}
-                                className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <TrashIcon />
-                              </button>
-                            </div>
-                          )}
+                        <td className="px-4 py-3 w-32">
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={() => viewOnMap(v)} title="View on map" disabled={v.status !== 'ready' || isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <MapIcon />
+                            </button>
+                            <button onClick={() => { setSelectedId(v.id); setShowTransform(true) }} title="Reproject" disabled={isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <ReprojIcon />
+                            </button>
+                            <button onClick={() => handleDownload(v.id)} title="Download" disabled={v.status !== 'ready' || isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <DownloadIcon />
+                            </button>
+                            <button onClick={() => { setDeletingId(v.id); setShowDeleteConfirm(true) }} title="Delete" disabled={isActive || (isDeleting && deletingId === v.id)}
+                              className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              {isDeleting && deletingId === v.id ? <SpinIcon /> : <TrashIcon />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )

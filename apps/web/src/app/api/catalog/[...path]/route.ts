@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { userId } = await auth()
@@ -21,7 +21,9 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   }
 
   const res = await fetch(url, { method: req.method, headers, body })
-  const data = await res.json()
+  const text = await res.text()
+  let data: unknown
+  try { data = JSON.parse(text) } catch { data = { error: text } }
   return NextResponse.json(data, { status: res.status })
 }
 

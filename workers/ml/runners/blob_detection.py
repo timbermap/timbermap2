@@ -4,6 +4,7 @@ import cv2
 import geojson
 from pathlib import Path
 import rasterio
+import rasterio.windows
 from osgeo import ogr, osr
 
 import db
@@ -11,22 +12,20 @@ import geo_utils
 
 log = logging.getLogger(__name__)
 
+# Tile size for blob detection. Large enough to detect blobs well,
+# small enough to keep memory bounded regardless of raster size.
+BLOB_TILE_SIZE = 4096
+# Overlap between tiles so blobs straddling a boundary are detected.
+BLOB_OVERLAP   = 32
+
 
 def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
-        epsg: int, geo_info: dict) -> tuple[list, dict]:
+        epsg: int, geo_info: dict, clerk_id: str = "",
+        progress_callback=None) -> tuple[list, dict]:
 
     log.info("Blob detection — job=%s  config=%s", job_id, cfg)
 
-    # ── Load probability raster ───────────────────────────────────────────────
-    with rasterio.open(prob_raster) as src:
-        img       = src.read(1).astype(np.uint8)
-        transform = src.transform
-        ulx  = transform.c
-        uly  = transform.f
-        xres = transform.a
-        yres = transform.e   # negative
-
-    # ── SimpleBlobDetector ────────────────────────────────────────────────────
+    # ── Build detector ────────────────────────────────────────────────────────
     params = cv2.SimpleBlobDetector_Params()
     params.minThreshold        = float(cfg.get("min_threshold", 0))
     params.maxThreshold        = float(cfg.get("max_threshold", 250))
@@ -38,52 +37,33 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
     params.minConvexity        = float(cfg.get("min_convexity", 0.1))
     params.filterByInertia     = True
     params.minInertiaRatio     = float(cfg.get("min_inertia_ratio", 0.1))
+    detector = cv2.SimpleBlobDetector_create(params)
 
-    detector  = cv2.SimpleBlobDetector_create(params)
-    keypoints = detector.detect(255 - img)
-    log.info("Detected %d keypoints", len(keypoints))
-
-    # ── Convert pixel → geographic coords (in raster native EPSG) ────────────
-    # No reprojection here — outputs stay in image EPSG for consistency
-    # MapLibre will reproject client-side for visualization
-    features = []
-    for kp in keypoints:
-        px, py = kp.pt
-        x_geo  = ulx + px * xres
-        y_geo  = uly + py * yres
-        features.append(geojson.Feature(geometry=geojson.Point((x_geo, y_geo))))
+    # ── Tiled blob detection ──────────────────────────────────────────────────
+    features = _detect_tiled(prob_raster, detector, progress_callback=progress_callback)
+    log.info("Detected %d keypoints across all tiles", len(features))
 
     # ── Optional AOI clip ─────────────────────────────────────────────────────
     if aoi_shp and features:
         features = _clip_points_to_aoi(features, aoi_shp, points_epsg=epsg)
         log.info("After AOI clip: %d points", len(features))
 
-    # ── Save GeoJSON (in raster native EPSG) ──────────────────────────────────
+    # ── Save GeoJSON ──────────────────────────────────────────────────────────
     geojson_path = f"/tmp/{job_id}_centroids.geojson"
     fc = geojson.FeatureCollection(features)
     with open(geojson_path, "w") as f:
         geojson.dump(fc, f)
 
-    # ── Save Shapefile (in raster native EPSG) ────────────────────────────────
+    # ── Save Shapefile ────────────────────────────────────────────────────────
     shp_path = _save_point_shapefile(features, epsg, job_id)
     zip_path = f"/tmp/{job_id}_stand_count.zip"
     geo_utils.zip_shapefile(shp_path, zip_path)
 
-    # ── Get bbox in 4326 for map centering ────────────────────────────────────
+    # ── bbox for map centering ────────────────────────────────────────────────
     bbox = geo_utils.get_bbox_4326(prob_raster)
 
-    # ── Upload + register outputs ─────────────────────────────────────────────
-    cog_path = geo_utils.convert_to_cog(prob_raster, job_id, "probabilities_cog")
-    cog_gcs  = f"results/{job_id}/probabilities.tif"
-    cog_size = geo_utils.upload_to_gcs(cog_path, cog_gcs)
-    db.insert_job_output(
-        job_id=job_id, output_type="raster_cog",
-        label="Raster de probabilidades",
-        gcs_path=cog_gcs, file_size=cog_size,
-        is_visualizable=True, layer_type="raster", epsg=epsg, bbox=bbox,
-    )
-
-    gj_gcs  = f"results/{job_id}/centroids.geojson"
+    # ── Upload + register outputs (no probability raster exposed to user) ─────
+    gj_gcs  = f"users/{clerk_id}/jobs/{job_id}/centroids.geojson"
     gj_size = geo_utils.upload_to_gcs(geojson_path, gj_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="geojson",
@@ -92,7 +72,7 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
         is_visualizable=True, layer_type="vector", epsg=epsg, bbox=bbox,
     )
 
-    zip_gcs  = f"results/{job_id}/stand_count.zip"
+    zip_gcs  = f"users/{clerk_id}/jobs/{job_id}/stand_count.zip"
     zip_size = geo_utils.upload_to_gcs(zip_path, zip_gcs)
     db.insert_job_output(
         job_id=job_id, output_type="shapefile",
@@ -101,14 +81,100 @@ def run(job_id: str, prob_raster: str, cfg: dict, aoi_shp: str | None,
         is_visualizable=False, layer_type=None,
     )
 
+    # ── Density raster (COG) — for scalable web visualization ────────────────
+    if features:
+        try:
+            density_path = geo_utils.points_to_density_cog(features, prob_raster, job_id)
+            density_gcs  = f"users/{clerk_id}/jobs/{job_id}/density.tif"
+            density_size = geo_utils.upload_to_gcs(density_path, density_gcs)
+            db.insert_job_output(
+                job_id=job_id, output_type="cog",
+                label="Densidad de copas (raster)",
+                gcs_path=density_gcs, file_size=density_size,
+                is_visualizable=True, layer_type="raster", epsg=3857, bbox=bbox,
+            )
+            import os as _os
+            try:
+                _os.remove(density_path)
+            except OSError:
+                pass
+            log.info("Density COG registered — %d points → %s", len(features), density_gcs)
+        except Exception as e:
+            log.warning("Density COG generation failed (non-fatal): %s", e)
+
     return [], {"count": len(features), "bbox": bbox}
+
+
+def _detect_tiled(prob_raster: str, detector, progress_callback=None) -> list:
+    """
+    Run SimpleBlobDetector tile by tile, reading only one tile at a time
+    from disk so memory stays bounded regardless of raster size.
+
+    Tiles overlap by BLOB_OVERLAP pixels on each edge so blobs near a
+    boundary are not missed. Keypoints in the trailing overlap strip are
+    discarded (they will be picked up by the adjacent tile) to avoid
+    duplicate detections.
+    """
+    features = []
+
+    with rasterio.open(prob_raster) as src:
+        W = src.width
+        H = src.height
+        transform = src.transform
+        ulx  = transform.c
+        uly  = transform.f
+        xres = transform.a
+        yres = transform.e  # negative
+
+        step = BLOB_TILE_SIZE - BLOB_OVERLAP
+
+        col_starts = list(range(0, W, step))
+        row_starts = list(range(0, H, step))
+        total_tiles = len(col_starts) * len(row_starts)
+        done = 0
+
+        for row0 in row_starts:
+            for col0 in col_starts:
+                tw = min(BLOB_TILE_SIZE, W - col0)
+                th = min(BLOB_TILE_SIZE, H - row0)
+
+                window = rasterio.windows.Window(col0, row0, tw, th)
+                tile = src.read(1, window=window).astype(np.uint8)
+
+                keypoints = detector.detect(255 - tile)
+
+                # Whether this tile is the last in each direction
+                last_col = (col0 + step) >= W
+                last_row = (row0 + step) >= H
+
+                for kp in keypoints:
+                    lx, ly = kp.pt  # local pixel coords within tile
+
+                    # Skip keypoints in the trailing overlap strip —
+                    # the next tile will detect them without the offset
+                    if not last_col and lx >= step:
+                        continue
+                    if not last_row and ly >= step:
+                        continue
+
+                    # Convert to global pixel then to geographic coords
+                    gx = ulx + (col0 + lx) * xres
+                    gy = uly + (row0 + ly) * yres
+                    features.append(geojson.Feature(geometry=geojson.Point((gx, gy))))
+
+                done += 1
+                log.info("Blob detection tile %d/%d  keypoints_this_tile=%d",
+                         done, total_tiles, len(keypoints))
+                if progress_callback:
+                    progress_callback(done, total_tiles)
+
+    return features
 
 
 def _clip_points_to_aoi(features: list, aoi_shp: str, points_epsg: int = None) -> list:
     from shapely.geometry import shape
     import geopandas as gpd
     aoi_gdf = gpd.read_file(aoi_shp)
-    # Reproject AOI to match points CRS if needed
     if points_epsg and aoi_gdf.crs and aoi_gdf.crs.to_epsg() != points_epsg:
         aoi_gdf = aoi_gdf.to_crs(epsg=points_epsg)
     aoi = aoi_gdf.unary_union

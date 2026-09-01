@@ -8,6 +8,7 @@ interface CatalogModel {
   name: string
   description: string
   pipeline_type: string
+  output_types: string[]
   is_free: boolean
   has_access: boolean
   is_visible: boolean
@@ -20,7 +21,39 @@ const PIPELINE_LABELS: Record<string, string> = {
   hough_lines:    'Line detection',
   zonal_grid:     'Grid analysis',
 }
+const OUTPUT_LABELS: Record<string, string> = {
+  raster_cog: 'Raster COG',
+  geojson:    'GeoJSON',
+  shapefile:  'Shapefile',
+  csv:        'CSV',
+}
 
+// ── Icons ────────────────────────────────────────────────────────────────────
+const ChevronDownIcon = ({ open }: { open: boolean }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+    className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
+    <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/>
+  </svg>
+)
+const CheckCircleIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+    <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd"/>
+  </svg>
+)
+const EyeSlashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+    <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd"/>
+    <path d="M10.748 13.93l2.523 2.523a9.987 9.987 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z"/>
+  </svg>
+)
+const EyeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+    <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
+    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clipRule="evenodd"/>
+  </svg>
+)
+
+// ── Modals ───────────────────────────────────────────────────────────────────
 function UpgradeModal({ model, onClose, onDone }: {
   model: CatalogModel; onClose: () => void; onDone: () => void
 }) {
@@ -46,7 +79,7 @@ function UpgradeModal({ model, onClose, onDone }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl w-full max-w-md p-6 relative shadow-xl">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        <button onClick={onClose} className="cursor-pointer absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
         {sent ? (
           <div className="text-center py-6">
             <div className="w-12 h-12 rounded-full bg-[#EEF7F6] flex items-center justify-center mx-auto mb-3">
@@ -70,7 +103,7 @@ function UpgradeModal({ model, onClose, onDone }: {
                   placeholder="Plantation type, area size, imagery you have..."/>
               </div>
               <button type="submit" disabled={sending}
-                className="w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                className="cursor-pointer w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
                 {sending ? 'Sending...' : 'Send request →'}
               </button>
             </form>
@@ -103,7 +136,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl w-full max-w-md p-6 relative shadow-xl">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        <button onClick={onClose} className="cursor-pointer absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
         {sent ? (
           <div className="text-center py-6">
             <div className="w-12 h-12 rounded-full bg-[#EEF7F6] flex items-center justify-center mx-auto mb-3">
@@ -127,7 +160,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
                   placeholder="Species, resolution, area size, what you're trying to detect..."/>
               </div>
               <button type="submit" disabled={sending}
-                className="w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                className="cursor-pointer w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
                 {sending ? 'Sending...' : 'Send message →'}
               </button>
             </form>
@@ -138,14 +171,150 @@ function ContactModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ── Model accordion card ──────────────────────────────────────────────────────
+function ModelCard({
+  model, open, onToggle, onActivate, onRequestUpgrade, onToggleVisibility,
+  activating, toggling,
+}: {
+  model: CatalogModel
+  open: boolean
+  onToggle: () => void
+  onActivate: () => void
+  onRequestUpgrade: () => void
+  onToggleVisibility: () => void
+  activating: boolean
+  toggling: boolean
+}) {
+  const statusBadge = model.has_access ? (
+    <span className="inline-flex items-center gap-1 bg-[#EEF7F6] text-[#3D7A72] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#A0CECC]/50">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
+      Active
+    </span>
+  ) : model.upgrade_requested ? (
+    <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-600 text-xs font-semibold px-2 py-0.5 rounded-full border border-amber-200">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
+      Pending
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-400 text-xs font-semibold px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"/>
+      Inactive
+    </span>
+  )
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden transition-all duration-200 ${
+      open
+        ? 'border-[#A0CECC] shadow-sm'
+        : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+    } ${!model.is_visible && model.has_access ? 'opacity-60' : ''}`}>
+
+      {/* Header row — always visible, click to toggle */}
+      <button
+        onClick={onToggle}
+        className={`cursor-pointer w-full flex items-center gap-4 px-5 py-4 text-left transition-colors ${
+          open ? 'bg-[#F4F9F8]' : 'bg-white hover:bg-gray-50/60'
+        }`}>
+
+        {/* Name + pipeline */}
+        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+          <span className="font-medium text-[#1A2624] text-sm truncate">{model.name}</span>
+          <span className="hidden sm:inline text-xs text-gray-400 flex-shrink-0">
+            {PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}
+          </span>
+        </div>
+
+        {/* Status + chevron */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {statusBadge}
+          <ChevronDownIcon open={open} />
+        </div>
+      </button>
+
+      {/* Expanded body */}
+      {open && (
+        <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-white">
+          {/* Description */}
+          <p className="text-sm text-gray-600 mb-4 leading-relaxed">{model.description}</p>
+
+          {/* Meta row */}
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <span className="text-xs px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">
+              {PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}
+            </span>
+            {model.output_types?.map((t, i) => (
+              <span key={`${t}-${i}`} className="text-xs px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 font-mono">
+                {OUTPUT_LABELS[t] || t}
+              </span>
+            ))}
+          </div>
+
+          {/* Action */}
+          <div className="flex items-center gap-3">
+            {model.has_access ? (
+              <>
+                <div className="flex items-center gap-1.5 text-[#3D7A72] text-xs font-medium">
+                  <CheckCircleIcon />
+                  You have access
+                </div>
+                <button
+                  onClick={onToggleVisibility}
+                  disabled={toggling}
+                  className={`cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                    model.is_visible
+                      ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                      : 'border-[#A0CECC] text-[#3D7A72] bg-[#EEF7F6] hover:bg-[#D6EEED]'
+                  }`}>
+                  {toggling ? '...' : model.is_visible
+                    ? <><EyeSlashIcon />Hide from models</>
+                    : <><EyeIcon />Show in models</>
+                  }
+                </button>
+              </>
+            ) : model.is_free ? (
+              <button
+                onClick={onActivate}
+                disabled={activating}
+                className="cursor-pointer inline-flex items-center gap-1.5 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50 shadow-sm">
+                {activating ? (
+                  <><svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Activating...</>
+                ) : (
+                  <><CheckCircleIcon />Activate free</>
+                )}
+              </button>
+            ) : model.upgrade_requested ? (
+              <div className="flex items-center gap-1.5 text-amber-600 text-xs font-medium">
+                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>
+                Access request pending — we'll be in touch
+              </div>
+            ) : (
+              <button
+                onClick={onRequestUpgrade}
+                className="cursor-pointer inline-flex items-center gap-1.5 border border-[#3D7A72] text-[#3D7A72] hover:bg-[#EEF7F6] text-xs font-semibold px-4 py-2 rounded-xl transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.449 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd"/>
+                </svg>
+                Request Pro access →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function CatalogPage() {
   const { user } = useUser()
   const [models, setModels] = useState<CatalogModel[]>([])
   const [loading, setLoading] = useState(true)
   const [activating, setActivating] = useState<string | null>(null)
-  const [togglingVisibility, setTogglingVisibility] = useState<string | null>(null)
+  const [toggling, setToggling] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
   const [upgradeModel, setUpgradeModel] = useState<CatalogModel | null>(null)
   const [contactOpen, setContactOpen] = useState(false)
+  const [search, setSearch] = useState('')
 
   async function load() {
     if (!user) return
@@ -170,8 +339,8 @@ export default function CatalogPage() {
   }
 
   async function toggleVisibility(model: CatalogModel) {
-    if (togglingVisibility) return
-    setTogglingVisibility(model.id)
+    if (toggling) return
+    setToggling(model.id)
     try {
       await fetch('/api/catalog/toggle-visibility', {
         method: 'POST',
@@ -179,7 +348,7 @@ export default function CatalogPage() {
         body: JSON.stringify({ model_id: model.id, visible: !model.is_visible }),
       })
       await load()
-    } finally { setTogglingVisibility(null) }
+    } finally { setToggling(null) }
   }
 
   if (loading) return (
@@ -188,98 +357,23 @@ export default function CatalogPage() {
     </div>
   )
 
-  const free = models.filter(m => m.is_free)
-  const paid = models.filter(m => !m.is_free)
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? models.filter(m =>
+        m.name.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q) ||
+        (PIPELINE_LABELS[m.pipeline_type] || m.pipeline_type).toLowerCase().includes(q)
+      )
+    : models
 
-  function ModelRow({ model }: { model: CatalogModel }) {
-    return (
-      <div className={`flex items-center gap-4 px-5 py-4 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors ${!model.is_visible && model.has_access ? 'opacity-60' : ''}`}>
+  const pro  = filtered.filter(m => !m.is_free)
+  const free = filtered.filter(m => m.is_free)
 
-        {/* Col 1: Status indicator */}
-        <div className="w-20 flex-shrink-0 flex items-center justify-center">
-          {model.has_access ? (
-            <span className="inline-flex items-center gap-1 bg-[#EEF7F6] text-[#3D7A72] text-xs font-semibold px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
-              Active
-            </span>
-          ) : model.upgrade_requested ? (
-            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-600 text-xs font-semibold px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
-              Pending
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-400 text-xs font-semibold px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"/>
-              Inactive
-            </span>
-          )}
-        </div>
-
-        {/* Col 2: Model info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${model.is_free ? 'bg-[#EEF7F6] text-[#2A5750]' : 'bg-blue-50 text-blue-700'}`}>
-              {model.is_free ? 'Free' : 'Pro'}
-            </span>
-            <span className="text-xs text-gray-400">{PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}</span>
-          </div>
-          <p className="font-medium text-[#1A2624] text-sm">{model.name}</p>
-          <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xl">{model.description}</p>
-        </div>
-
-        {/* Col 3: Actions */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {model.has_access ? (
-            <button
-              onClick={() => toggleVisibility(model)}
-              disabled={togglingVisibility === model.id}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-                model.is_visible
-                  ? 'border-gray-200 text-gray-500 hover:bg-gray-100'
-                  : 'border-[#A0CECC] text-[#3D7A72] bg-[#EEF7F6] hover:bg-[#D6EEED]'
-              }`}>
-              {togglingVisibility === model.id ? '...' : model.is_visible ? 'Hide from models' : 'Show in models'}
-            </button>
-          ) : model.is_free ? (
-            <button
-              onClick={() => activateFree(model)}
-              disabled={activating === model.id}
-              className="bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-              {activating === model.id ? 'Activating...' : 'Activate →'}
-            </button>
-          ) : model.upgrade_requested ? (
-            <span className="text-xs text-gray-400 font-medium">—</span>
-          ) : (
-            <button
-              onClick={() => setUpgradeModel(model)}
-              className="border border-[#3D7A72] text-[#3D7A72] hover:bg-[#EEF7F6] text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors">
-              Request access →
-            </button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // Column headers
-  function TableHeader() {
-    return (
-      <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 bg-gray-50/80">
-        <div className="w-20 flex-shrink-0">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Model</span>
-        </div>
-        <div className="flex-shrink-0 w-36">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Action</span>
-        </div>
-      </div>
-    )
-  }
+  const proActive  = pro.filter(m => m.has_access).length
+  const freeActive = free.filter(m => m.has_access).length
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="w-full">
       {upgradeModel && (
         <UpgradeModal model={upgradeModel} onClose={() => setUpgradeModel(null)} onDone={() => { setUpgradeModel(null); load() }}/>
       )}
@@ -287,14 +381,15 @@ export default function CatalogPage() {
         <ContactModal onClose={() => setContactOpen(false)}/>
       )}
 
-      <div className="flex items-start justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-5">
         <div>
-          <p className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide mb-1">Model catalog</p>
-          <h1 className="text-2xl font-bold text-[#1A2624]">Available models</h1>
-          <p className="text-sm text-gray-500 mt-1">Activate free models instantly. Request access to Pro models. Hide models you don't use.</p>
+          <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0] mb-1">AI Models</p>
+          <h1 className="text-2xl font-semibold text-[#1C1C1C]">Model catalog</h1>
+          <p className="text-gray-400 mt-1 text-sm">Activate free models instantly · Request access to Pro models</p>
         </div>
         <Link href="/dashboard/models"
-          className="inline-flex items-center gap-2 bg-[#EEF7F6] hover:bg-[#D6EEED] text-[#3D7A72] font-medium text-sm px-3.5 py-2 rounded-xl transition-colors border border-[#A0CECC]/50 flex-shrink-0">
+          className="flex items-center gap-2 bg-[#EEF7F6] hover:bg-[#D6EEED] text-[#3D7A72] font-medium text-sm px-3.5 py-2 rounded-xl transition-colors border border-[#A0CECC]/50 flex-shrink-0 cursor-pointer">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
           </svg>
@@ -302,33 +397,138 @@ export default function CatalogPage() {
         </Link>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-4">
-        {free.length > 0 && (
-          <>
-            <div className="px-5 py-2.5 bg-[#F4F9F9] border-b border-gray-100">
-              <span className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide">Free — all plans</span>
-            </div>
-            <TableHeader />
-            {free.map(m => <ModelRow key={m.id} model={m}/>)}
-          </>
-        )}
-        {paid.length > 0 && (
-          <>
-            <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Pro & Premium</span>
-            </div>
-            <TableHeader />
-            {paid.map(m => <ModelRow key={m.id} model={m}/>)}
-          </>
+      {/* Search bar */}
+      <div className="relative mb-7">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+          className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+          <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd"/>
+        </svg>
+        <input
+          type="text"
+          placeholder="Search models by name, type or description..."
+          value={search}
+          onChange={e => { setSearch(e.target.value); setOpenId(null) }}
+          className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all placeholder-gray-400"
+        />
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="cursor-pointer absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+            </svg>
+          </button>
         )}
       </div>
 
-      <div className="p-4 rounded-xl border border-dashed border-[#A0CECC] bg-[#F4F9F9]">
-        <p className="text-sm font-medium text-[#1A2624] mb-0.5">Need a custom model?</p>
-        <p className="text-sm text-gray-500">
-          We build models tailored to your species, resolution, and operation.{' '}
-          <button onClick={() => setContactOpen(true)} className="text-[#3D7A72] font-medium hover:underline">Contact us →</button>
-        </p>
+      {/* No search results */}
+      {q && pro.length === 0 && free.length === 0 && (
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-12 text-center mb-4">
+          <p className="text-gray-400 text-sm">No models match <span className="font-medium text-gray-600">&quot;{search}&quot;</span></p>
+          <button onClick={() => setSearch('')} className="cursor-pointer text-xs text-[#3D7A72] hover:underline mt-2 font-medium">Clear search</button>
+        </div>
+      )}
+
+      <div className="space-y-8">
+
+        {/* ── PRO section ───────────────────────────────────────────────── */}
+        {(pro.length > 0 || !q) && (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
+                Pro
+              </span>
+              <span className="text-xs text-gray-400 font-medium">Advanced models</span>
+            </div>
+            {proActive > 0 && (
+              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                {proActive} active
+              </span>
+            )}
+            <div className="flex-1 h-px bg-gray-100"/>
+          </div>
+
+          {pro.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+              <p className="text-gray-400 text-sm">No pro models available yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pro.map(m => (
+                <ModelCard
+                  key={m.id}
+                  model={m}
+                  open={openId === m.id}
+                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
+                  onActivate={() => activateFree(m)}
+                  onRequestUpgrade={() => setUpgradeModel(m)}
+                  onToggleVisibility={() => toggleVisibility(m)}
+                  activating={activating === m.id}
+                  toggling={toggling === m.id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* ── FREE section ──────────────────────────────────────────────── */}
+        {(free.length > 0 || !q) && (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
+                Free
+              </span>
+              <span className="text-xs text-gray-400 font-medium">All plans</span>
+            </div>
+            {freeActive > 0 && (
+              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                {freeActive} active
+              </span>
+            )}
+            <div className="flex-1 h-px bg-gray-100"/>
+          </div>
+
+          {free.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+              <p className="text-gray-400 text-sm">No free models available yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {free.map(m => (
+                <ModelCard
+                  key={m.id}
+                  model={m}
+                  open={openId === m.id}
+                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
+                  onActivate={() => activateFree(m)}
+                  onRequestUpgrade={() => setUpgradeModel(m)}
+                  onToggleVisibility={() => toggleVisibility(m)}
+                  activating={activating === m.id}
+                  toggling={toggling === m.id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        )}
+
+      </div>
+
+      {/* Custom model CTA */}
+      <div className="mt-8 p-5 rounded-2xl border border-dashed border-[#A0CECC] bg-[#F4F9F9] flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-[#1A2624] mb-0.5">Need a custom model?</p>
+          <p className="text-sm text-gray-500">We build models tailored to your species, resolution, and operation.</p>
+        </div>
+        <button
+          onClick={() => setContactOpen(true)}
+          className="cursor-pointer flex-shrink-0 inline-flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm">
+          Contact us →
+        </button>
       </div>
     </div>
   )

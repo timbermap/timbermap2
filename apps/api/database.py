@@ -3,19 +3,70 @@ import uuid
 import json
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_conn():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "127.0.0.1"),
-        port=os.getenv("DB_PORT", 5432),
-        dbname=os.getenv("DB_NAME", "timbermap"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD"),
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+
+
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=20,
+            host=os.getenv("DB_HOST", "127.0.0.1"),
+            port=int(os.getenv("DB_PORT", 5432)),
+            dbname=os.getenv("DB_NAME", "timbermap"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD"),
+        )
+    return _pool
+
+
+class _PooledConn:
+    """
+    Transparent wrapper around a pooled psycopg2 connection.
+    .close() returns the connection to the pool instead of closing it,
+    so all existing call-sites (conn = get_conn() … conn.close()) work unchanged.
+    __del__ is a safety net so connections are never permanently leaked if a
+    caller forgets to call .close() or an exception bypasses it.
+    """
+    def __init__(self, pool: psycopg2.pool.ThreadedConnectionPool, conn):
+        self._pool = pool
+        self._conn = conn
+        self._returned = False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        if not self._returned:
+            self._returned = True
+            # Roll back any open transaction so the connection is clean for reuse
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            self._pool.putconn(self._conn)
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def get_conn() -> _PooledConn:
+    pool = _get_pool()
+    conn = pool.getconn()
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    return _PooledConn(pool, conn)
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
@@ -54,14 +105,21 @@ def get_user_by_clerk_id(clerk_id: str):
 
 # ── Images ───────────────────────────────────────────────────────────────────
 
-def insert_image(owner_id, filename, gcs_path, filesize):
+def insert_image(owner_id, filename, gcs_path, filesize, image_id=None):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO images (owner_id, filename, gcs_path, filesize, status)
-        VALUES (%s, %s, %s, %s, 'uploaded')
-        RETURNING id
-    """, (owner_id, filename, gcs_path, filesize))
+    if image_id:
+        cur.execute("""
+            INSERT INTO images (id, owner_id, filename, gcs_path, filesize, status)
+            VALUES (%s, %s, %s, %s, %s, 'uploaded')
+            RETURNING id
+        """, (image_id, owner_id, filename, gcs_path, filesize))
+    else:
+        cur.execute("""
+            INSERT INTO images (owner_id, filename, gcs_path, filesize, status)
+            VALUES (%s, %s, %s, %s, 'uploaded')
+            RETURNING id
+        """, (owner_id, filename, gcs_path, filesize))
     row = cur.fetchone()
     conn.commit()
     cur.close()
@@ -531,13 +589,26 @@ def superadmin_list_queue():
 def superadmin_cancel_job(job_id: str):
     conn = get_conn()
     cur = conn.cursor()
+    cur.execute("SELECT input_ref, type, input_image_id, input_vector_id FROM jobs WHERE id = %s", (job_id,))
+    job_row = cur.fetchone()
     cur.execute("""
-        UPDATE jobs SET status = 'failed', message = 'Cancelled by superadmin',
+        UPDATE jobs SET status = 'cancelled', message = 'Cancelled by superadmin',
         finished_at = now()
         WHERE id = %s AND status IN ('queued', 'running')
         RETURNING id
     """, (job_id,))
     row = cur.fetchone()
+    if row and job_row:
+        import json as _j
+        input_ref = job_row["input_ref"] or {}
+        if isinstance(input_ref, str): input_ref = _j.loads(input_ref)
+        # ML jobs store image/vector id directly; ingest/transform jobs use input_ref
+        image_id = job_row.get("input_image_id") or input_ref.get("image_id")
+        vector_id = job_row.get("input_vector_id") or input_ref.get("vector_id")
+        if image_id:
+            cur.execute("UPDATE images SET status = 'ready' WHERE id = %s", (image_id,))
+        if vector_id:
+            cur.execute("UPDATE vectors SET status = 'ready' WHERE id = %s", (vector_id,))
     conn.commit()
     cur.close()
     conn.close()

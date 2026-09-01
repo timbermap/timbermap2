@@ -13,17 +13,17 @@ const nav = [
   { label: 'Map',       href: '/dashboard/map', icon: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg> },
 ]
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
 export default function Sidebar() {
   const path = usePathname()
   const { user, isLoaded } = useUser()
-  const [collapsed, setCollapsed]     = useState(false)
+  const [collapsed, setCollapsed]     = useState(true)
   const [isSuperadmin, setIsSuperadmin] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('sidebar-collapsed')
-    if (stored === 'true') setCollapsed(true)
+    if (stored !== null) setCollapsed(stored === 'true')
   }, [])
 
   useEffect(() => {
@@ -90,8 +90,17 @@ export default function Sidebar() {
         <div className="border-t border-white/8 px-3 py-3">
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-1 py-1`}>
             <UserButton>
-              {isSuperadmin && (
-                <UserButton.MenuItems>
+              <UserButton.MenuItems>
+                <UserButton.Link
+                  label="Stats"
+                  labelIcon={
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+                      <path d="M15.5 2A1.5 1.5 0 0 0 14 3.5v13a1.5 1.5 0 0 0 3 0v-13A1.5 1.5 0 0 0 15.5 2ZM9.5 6A1.5 1.5 0 0 0 8 7.5v9a1.5 1.5 0 0 0 3 0v-9A1.5 1.5 0 0 0 9.5 6ZM3.5 10A1.5 1.5 0 0 0 2 11.5v5a1.5 1.5 0 0 0 3 0v-5A1.5 1.5 0 0 0 3.5 10Z"/>
+                    </svg>
+                  }
+                  href="/dashboard/stats"
+                />
+                {isSuperadmin && (
                   <UserButton.Link
                     label="Admin Panel"
                     labelIcon={
@@ -102,8 +111,8 @@ export default function Sidebar() {
                     }
                     href="/dashboard/admin"
                   />
-                </UserButton.MenuItems>
-              )}
+                )}
+              </UserButton.MenuItems>
             </UserButton>
             {!collapsed && (
               <span className="text-white/40 text-xs truncate">

@@ -4,8 +4,9 @@ Cleanup worker — deletes rasters, vectors, and full user data.
 """
 
 import os
+import hmac
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from google.cloud import storage as gcs_lib
 import psycopg2
 import psycopg2.extras
@@ -18,6 +19,14 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="Timbermap Cleanup Worker")
 
 GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
+INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")
+
+
+def require_internal_secret(x_internal_secret: str = Header(None, alias="x-internal-secret")) -> None:
+    # Fails closed: this worker performs irreversible deletes and must only be
+    # reachable from the API, never directly from the internet.
+    if not INTERNAL_SECRET or not x_internal_secret or not hmac.compare_digest(x_internal_secret, INTERNAL_SECRET):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -94,21 +103,44 @@ def _get_clerk_id_for_owner(owner_id, cur) -> str:
     return row["clerk_id"] if row else str(owner_id)
 
 
+def _delete_jobs_for(field: str, value: str, clerk_id: str, cur):
+    """Delete job outputs (GCS + DB) for jobs matching input_ref field."""
+    cur.execute(
+        f"SELECT id FROM jobs WHERE input_ref->>{repr(field)} = %s", (value,)
+    )
+    job_ids = [r["id"] for r in cur.fetchall()]
+    for jid in job_ids:
+        delete_gcs_blobs(f"users/{clerk_id}/jobs/{jid}/")
+        cur.execute("DELETE FROM job_outputs WHERE job_id = %s", (str(jid),))
+    if job_ids:
+        import psycopg2.extras as _extras
+        cur.execute(
+            "DELETE FROM jobs WHERE id = ANY(%s::uuid[])",
+            ([str(j) for j in job_ids],)
+        )
+
+
 def _delete_one_image(image_id: str, owner_id, cur):
     clerk_id = _get_clerk_id_for_owner(owner_id, cur)
-    delete_gcs_blob(f"users/cogs/{image_id}.tif")
-    delete_gcs_blob(f"users/thumbnails/{image_id}.jpg")
-    delete_gcs_blobs(f"users/{clerk_id}/rasters/")
-    cur.execute("DELETE FROM jobs WHERE input_ref->>'image_id' = %s", (str(image_id),))
+    cur.execute("SELECT gcs_path FROM images WHERE id = %s", (image_id,))
+    img_row = cur.fetchone()
+    _delete_jobs_for("image_id", str(image_id), clerk_id, cur)
+    delete_gcs_blob(f"users/{clerk_id}/cogs/{image_id}.tif")
+    delete_gcs_blob(f"users/{clerk_id}/thumbnails/{image_id}.jpg")
+    if img_row and img_row["gcs_path"]:
+        delete_gcs_blob(img_row["gcs_path"])
     cur.execute("DELETE FROM images WHERE id = %s", (image_id,))
 
 
 def _delete_one_vector(vector_id: str, owner_id, cur):
     clerk_id = _get_clerk_id_for_owner(owner_id, cur)
+    cur.execute("SELECT gcs_path FROM vectors WHERE id = %s", (str(vector_id),))
+    vrow = cur.fetchone()
     table = f"vec_{vector_id.replace('-', '_')}"
     drop_postgis_table("vectors", table)
-    delete_gcs_blobs(f"users/{clerk_id}/vectors/")
-    cur.execute("DELETE FROM jobs WHERE input_ref->>'vector_id' = %s", (str(vector_id),))
+    _delete_jobs_for("vector_id", str(vector_id), clerk_id, cur)
+    if vrow and vrow["gcs_path"]:
+        delete_gcs_blob(vrow["gcs_path"])
     cur.execute("DELETE FROM vectors WHERE id = %s", (vector_id,))
 
 
@@ -119,7 +151,7 @@ def health():
     return {"status": "ok", "service": "cleanup-worker"}
 
 
-@app.delete("/raster/{image_id}")
+@app.delete("/raster/{image_id}", dependencies=[Depends(require_internal_secret)])
 def delete_raster(image_id: str):
     conn = get_conn()
     cur  = conn.cursor()
@@ -140,7 +172,7 @@ def delete_raster(image_id: str):
         cur.close(); conn.close()
 
 
-@app.delete("/vector/{vector_id}")
+@app.delete("/vector/{vector_id}", dependencies=[Depends(require_internal_secret)])
 def delete_vector(vector_id: str):
     conn = get_conn()
     cur  = conn.cursor()
@@ -161,7 +193,7 @@ def delete_vector(vector_id: str):
         cur.close(); conn.close()
 
 
-@app.delete("/user/{clerk_id}")
+@app.delete("/user/{clerk_id}", dependencies=[Depends(require_internal_secret)])
 def delete_user(clerk_id: str):
     conn = get_conn()
     cur  = conn.cursor()
@@ -187,6 +219,10 @@ def delete_user(clerk_id: str):
         drop_postgis_schema(f"user_{clerk_id.replace('-', '_')}")
 
         cur.execute("DELETE FROM user_model_permissions WHERE clerk_id = %s", (clerk_id,))
+        cur.execute("""
+            DELETE FROM job_outputs
+            WHERE job_id IN (SELECT id FROM jobs WHERE owner_id = %s)
+        """, (owner_id,))
         cur.execute("DELETE FROM jobs WHERE owner_id = %s", (owner_id,))
         cur.execute("DELETE FROM users WHERE clerk_id = %s", (clerk_id,))
 

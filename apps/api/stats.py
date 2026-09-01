@@ -8,21 +8,8 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_current_user_id(authorization: str = Header(...)) -> str:
-    import base64, json
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = authorization[7:]
-    try:
-        payload_b64 = token.split(".")[1]
-        payload_b64 += "=" * (-len(payload_b64) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        user_id = payload.get("sub")
-        if not user_id:
-            raise ValueError("No 'sub' in token")
-        return user_id
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+def get_current_user_id(x_clerk_id: str = Header(..., alias="x-clerk-id")) -> str:
+    return x_clerk_id
 
 
 def get_conn():
@@ -105,9 +92,102 @@ def get_stats(clerk_id: str = Depends(get_current_user_id)):
 
 
 @router.get("/{clerk_id}")
-def get_stats_by_clerk_id(clerk_id: str):
+def get_stats_by_clerk_id(clerk_id: str, requester_id: str = Depends(get_current_user_id)):
+    if clerk_id != requester_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         return fetch_stats(clerk_id)
     except Exception as e:
         log.error("stats failed for %s: %s", clerk_id, e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{clerk_id}/detailed")
+def get_detailed_stats(clerk_id: str, requester_id: str = Depends(get_current_user_id)):
+    """
+    Returns full stats for the user's dashboard:
+    - images: list with area_ha, filesize, created_at, status
+    - vectors: list with area_ha, filesize, geometry_type, created_at, status
+    - jobs: list with type, status, pipeline_type, image_ha, vector_ha, aoi_used, created_at, finished_at
+    """
+    if clerk_id != requester_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    conn = get_conn()
+    cur  = conn.cursor()
+
+    cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return {"images": [], "vectors": [], "jobs": []}
+    owner_id = row["id"]
+
+    # Images
+    cur.execute("""
+        SELECT id, filename, status, area_ha, filesize, epsg, num_bands,
+               pixel_size_x, pixel_size_y, created_at
+        FROM images
+        WHERE owner_id = %s
+        ORDER BY created_at DESC
+    """, (owner_id,))
+    images = [dict(r) for r in cur.fetchall()]
+    for img in images:
+        if img.get("created_at"):
+            img["created_at"] = img["created_at"].isoformat()
+
+    # Vectors
+    cur.execute("""
+        SELECT id, filename, status, area_ha, filesize, geometry_type, epsg, created_at
+        FROM vectors
+        WHERE owner_id = %s
+        ORDER BY created_at DESC
+    """, (owner_id,))
+    vectors = [dict(r) for r in cur.fetchall()]
+    for v in vectors:
+        if v.get("created_at"):
+            v["created_at"] = v["created_at"].isoformat()
+
+    # Jobs — joined with image/vector area and model pipeline_type
+    cur.execute("""
+        SELECT
+            j.id, j.type, j.status, j.message,
+            j.input_image_id, j.input_vector_id,
+            j.input_ref, j.input_params, j.summary,
+            j.created_at, j.started_at, j.finished_at,
+            i.area_ha   AS image_ha,
+            i.filename  AS image_filename,
+            v.area_ha   AS vector_ha,
+            v.filename  AS vector_filename,
+            m.name          AS model_name,
+            m.pipeline_type AS pipeline_type
+        FROM jobs j
+        LEFT JOIN images  i ON i.id = j.input_image_id
+        LEFT JOIN vectors v ON v.id = j.input_vector_id
+        LEFT JOIN models  m ON m.id = j.model_id
+        WHERE j.owner_id = %s
+        ORDER BY j.created_at DESC
+    """, (owner_id,))
+    jobs = []
+    for r in cur.fetchall():
+        d = dict(r)
+        for k in ["created_at", "started_at", "finished_at"]:
+            if d.get(k):
+                d[k] = d[k].isoformat()
+        # Determine AOI usage and ha processed
+        aoi_used = d["input_vector_id"] is not None or (
+            d.get("input_params") and d["input_params"].get("aoi_geojson")
+        )
+        # ha processed: prefer vector area if AOI used, else image area
+        if aoi_used and d.get("vector_ha"):
+            ha_processed = d["vector_ha"]
+        else:
+            ha_processed = d.get("image_ha")
+        d["aoi_used"]     = aoi_used
+        d["ha_processed"] = ha_processed
+        # Clean jsonb fields that aren't needed on frontend
+        d.pop("input_params", None)
+        jobs.append(d)
+
+    cur.close()
+    conn.close()
+    return {"images": images, "vectors": vectors, "jobs": jobs}

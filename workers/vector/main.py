@@ -42,6 +42,18 @@ def update_job(job_id: str, status: str, message: str):
     conn.close()
 
 
+def is_cancelled(job_id: str) -> bool:
+    try:
+        conn = get_conn()
+        cur  = conn.cursor()
+        cur.execute("SELECT status FROM jobs WHERE id = %s", (job_id,))
+        row  = cur.fetchone()
+        cur.close(); conn.close()
+        return bool(row and row["status"] == "cancelled")
+    except Exception:
+        return False
+
+
 def update_vector(vector_id: str, **kwargs):
     if not kwargs:
         return
@@ -195,6 +207,7 @@ async def ingest_vector(job: IngestJob):
         try:
             download_from_gcs(job.gcs_path, zip_path)
 
+            if is_cancelled(job.job_id): return
             update_job(job.job_id, "running", "Reading shapefile...")
             gdf = read_shapefile(zip_path)
             if gdf.crs is None:
@@ -213,6 +226,7 @@ async def ingest_vector(job: IngestJob):
             update_job(job.job_id, "running", "Calculating area...")
             area_ha = get_area_ha(gdf)
 
+            if is_cancelled(job.job_id): return
             update_job(job.job_id, "running", "Saving to PostGIS...")
             tbl = table_name_for(job.vector_id)
             push_to_postgis(gdf, "vectors", tbl)

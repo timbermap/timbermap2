@@ -10,8 +10,8 @@ type ImageFile = {
   bbox_minx: number | null; bbox_miny: number | null
   bbox_maxx: number | null; bbox_maxy: number | null
 }
-type Job = { id: string; type: string; status: string; input_ref: Record<string, unknown> | null }
-type UploadItem = { file: File; progress: number; status: 'waiting'|'uploading'|'done'|'error'; message: string }
+type Job = { id: string; type: string; status: string; input_ref: Record<string, unknown> | null; input_image_id?: string | null; input_vector_id?: string | null }
+type UploadItem = { uid: string; file: File; progress: number; status: 'waiting'|'uploading'|'done'|'error'; message: string }
 type TransformForm = { new_epsg: string; new_resolution_x: string; new_resolution_y: string }
 type SortKey = 'filename' | 'created_at' | 'area_ha' | 'filesize' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -24,6 +24,7 @@ const TrashIcon    = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
 const ReprojIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
 const MapIcon      = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
 const SpinIcon     = () => <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+const StopIcon     = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path d="M5.25 3A2.25 2.25 0 0 0 3 5.25v9.5A2.25 2.25 0 0 0 5.25 17h9.5A2.25 2.25 0 0 0 17 14.75v-9.5A2.25 2.25 0 0 0 14.75 3h-9.5Z"/></svg>
 const SortIcon = ({ dir }: { dir?: SortDir }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline ml-1">
     {dir === 'asc'  ? <path fillRule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.29 9.77a.75.75 0 0 1-1.08-1.04l5.25-5.5a.75.75 0 0 1 1.08 0l5.25 5.5a.75.75 0 1 1-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0 1 10 17Z" clipRule="evenodd"/> :
@@ -37,6 +38,19 @@ export default function ImagesPage() {
   const [uploads, setUploads]     = useState<UploadItem[]>([])
   const [images, setImages]       = useState<ImageFile[]>([])
   const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
+  const [activeJobMap, setActiveJobMap]     = useState<Record<string, string>>({})
+  const [cancellingImg, setCancellingImg]   = useState<string | null>(null)
+
+  async function handleCancelImageJob(imageId: string) {
+    const jobId = activeJobMap[imageId]
+    if (!jobId || !user) return
+    setCancellingImg(imageId)
+    try {
+      await fetch(`${API}/jobs/${jobId}/cancel?clerk_id=${user.id}`, { method: 'POST' })
+      await fetchData()
+    } catch (e) { console.error(e) }
+    finally { setCancellingImg(null) }
+  }
   const [loading, setLoading]     = useState(true)
   const [selectedId, setSelectedId]             = useState<string | null>(null)
   const [showTransform, setShowTransform]       = useState(false)
@@ -54,27 +68,44 @@ export default function ImagesPage() {
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
   const [previewId, setPreviewId] = useState<string | null>(null)
   const fetchedThumbIds = useRef<Set<string>>(new Set())
+  const prevStatusRef   = useRef<Record<string, string>>({})
+  const highlightTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
-  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-788407107542.us-central1.run.app'
+  const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
   const fetchData = useCallback(async () => {
     if (!isLoaded || !user) { setLoading(false); return }
     try {
       const [imgRes, jobsRes] = await Promise.all([
-        fetch(`${API}/images/${user.id}`),
-        fetch(`${API}/jobs/${user.id}`),
+        fetch(`${API}/images/${user.id}`).catch(() => null),
+        fetch(`${API}/jobs/${user.id}`).catch(() => null),
       ])
-      const imgData  = await imgRes.json()
-      const jobsData = await jobsRes.json()
-      setImages(imgData.images || [])
+      const imgData  = imgRes?.ok  ? await imgRes.json().catch(() => ({}))  : {}
+      const jobsData = jobsRes?.ok ? await jobsRes.json().catch(() => ({})) : {}
+      const imgs: ImageFile[] = imgData.images || []
+      const changed = new Set<string>()
+      imgs.forEach(img => {
+        const prev = prevStatusRef.current[img.id]
+        if (prev !== undefined && prev !== img.status) changed.add(img.id)
+        prevStatusRef.current[img.id] = img.status
+      })
+      setImages(imgs)
+      if (changed.size > 0) {
+        if (highlightTimer.current) clearTimeout(highlightTimer.current)
+        setHighlighted(changed)
+        highlightTimer.current = setTimeout(() => setHighlighted(new Set()), 1500)
+      }
       const active = new Set<string>()
+      const jobMap: Record<string, string> = {}
       for (const job of (jobsData.jobs || []) as Job[]) {
         if (job.status === 'queued' || job.status === 'running') {
-          const iid = job.input_ref?.image_id as string | undefined
-          if (iid) active.add(iid)
+          const iid = (job.input_ref?.image_id as string | undefined) || job.input_image_id || undefined
+          if (iid) { active.add(iid); jobMap[iid] = job.id }
         }
       }
       setActiveImageIds(active)
+      setActiveJobMap(jobMap)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }, [user, isLoaded, API])
@@ -101,38 +132,67 @@ export default function ImagesPage() {
     })
   }, [images, user, API])
 
-  async function uploadSingle(item: UploadItem, index: number) {
+  async function uploadSingle(item: UploadItem) {
     if (!user) return
-    const upd = (p: Partial<UploadItem>) => setUploads(prev => prev.map((u, i) => i === index ? { ...u, ...p } : u))
+    const upd = (p: Partial<UploadItem>) =>
+      setUploads(prev => prev.map(u => u.uid === item.uid ? { ...u, ...p } : u))
     upd({ status: 'uploading', message: 'Getting URL...' })
     try {
-      const r = await fetch(`${API}/upload/signed-url`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: item.file.name, content_type: item.file.type || 'image/tiff', clerk_id: user.id,
-          email: user.emailAddresses[0]?.emailAddress, username: user.username || user.firstName || user.id,
-          file_type: 'raster', filesize: item.file.size }) })
-      const { url, gcs_path } = await r.json()
+      const r = await fetch(`${API}/upload/signed-url`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: item.file.name, content_type: item.file.type || 'image/tiff',
+          clerk_id: user.id, email: user.emailAddresses[0]?.emailAddress,
+          username: user.username || user.firstName || user.id,
+          file_type: 'raster', filesize: item.file.size,
+        }),
+      })
+      const { url, gcs_path, file_id } = await r.json()
       upd({ message: 'Uploading...' })
+
       await new Promise<void>((res, rej) => {
         const xhr = new XMLHttpRequest()
-        xhr.upload.onprogress = e => { if (e.lengthComputable) upd({ progress: Math.round(e.loaded / e.total * 100) }) }
-        xhr.onload = () => xhr.status === 200 ? res() : rej(xhr.statusText)
-        xhr.onerror = () => rej('Upload failed')
-        xhr.open('PUT', url); xhr.setRequestHeader('Content-Type', item.file.type || 'image/tiff'); xhr.send(item.file)
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) upd({ progress: Math.round(e.loaded / e.total * 100) })
+        }
+        xhr.onload = () => (xhr.status === 200 || xhr.status === 201) ? res() : rej(xhr.statusText)
+        xhr.onerror = () => rej('Network error during upload')
+        xhr.open('PUT', url)
+        xhr.setRequestHeader('Content-Type', item.file.type || 'image/tiff')
+        xhr.send(item.file)
       })
-      upd({ message: 'Processing...' })
-      await fetch(`${API}/upload/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clerk_id: user.id, filename: item.file.name, gcs_path, filesize: item.file.size, file_type: 'raster' }) })
+
+      upd({ progress: 100, message: 'Confirming...' })
+      await fetch(`${API}/upload/confirm`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clerk_id: user.id, filename: item.file.name, gcs_path, filesize: item.file.size, file_type: 'raster', file_id }),
+      })
       upd({ status: 'done', progress: 100, message: 'Done' })
-    } catch (err) { upd({ status: 'error', message: 'Failed: ' + String(err) }) }
+      await fetchData()
+      setTimeout(() => setUploads(prev => prev.filter(u => u.uid !== item.uid)), 2000)
+    } catch (err) {
+      upd({ status: 'error', message: 'Failed: ' + String(err) })
+    }
   }
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const items = files.map(f => ({ file: f, progress: 0, status: 'waiting' as const, message: 'Waiting...' }))
-    setUploads(items)
-    await Promise.all(items.map((item, i) => uploadSingle(item, i)))
-    await fetchData(); setTimeout(() => setUploads([]), 3000)
+    const items: UploadItem[] = files.map(f => ({
+      uid: `${f.name}-${Date.now()}-${Math.random()}`,
+      file: f, progress: 0, status: 'waiting', message: 'Waiting...',
+    }))
+    setUploads(prev => [...prev, ...items])
+    // Upload up to 3 at a time — enough parallelism without saturating browser connections
+    const CONCURRENCY = 3
+    const queue = [...items]
+    async function worker() {
+      while (queue.length) {
+        const item = queue.shift()!
+        await uploadSingle(item)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker))
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -311,20 +371,53 @@ export default function ImagesPage() {
         <input ref={fileRef} type="file" accept=".tif,.tiff,.geotiff" multiple className="hidden" onChange={handleFiles} />
       </div>
 
-      {/* Upload progress */}
+      {/* Upload progress — one row per file */}
       {uploads.length > 0 && (
         <div className="mb-5 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-50 bg-[#EEF7F6]">
-            <p className="text-xs font-medium tracking-widest uppercase text-[#6AA8A0]">Uploading {uploads.length} file{uploads.length > 1 ? 's' : ''}</p>
+          <div className="px-5 py-2.5 border-b border-gray-50 bg-[#EEF7F6] flex items-center gap-2">
+            <svg className="animate-spin w-3 h-3 text-[#6AA8A0]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            <p className="text-xs font-semibold tracking-widest uppercase text-[#6AA8A0]">
+              Uploading {uploads.filter(u => u.status !== 'done' && u.status !== 'error').length} of {uploads.length} file{uploads.length > 1 ? 's' : ''}
+            </p>
           </div>
-          {uploads.map((u, i) => (
-            <div key={i} className="px-5 py-3 border-b border-gray-50 last:border-0">
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-700 font-medium truncate">{u.file.name}</span>
-                <span className="text-xs text-gray-400 ml-3">{u.message}</span>
+          {uploads.map((u) => (
+            <div key={u.uid} className="px-5 py-3 border-b border-gray-50 last:border-0">
+              {/* Filename + status badge */}
+              <div className="flex items-center gap-3 mb-2">
+                {u.status === 'done' ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#3D7A72] flex-shrink-0">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd"/>
+                  </svg>
+                ) : u.status === 'error' ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-red-400 flex-shrink-0">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/>
+                  </svg>
+                ) : u.status === 'waiting' ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-gray-200 flex-shrink-0" />
+                ) : (
+                  <svg className="animate-spin w-4 h-4 text-[#6AA8A0] flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                )}
+                <span className="text-sm text-gray-700 font-medium truncate flex-1">{u.file.name}</span>
+                <span className={`text-xs font-medium flex-shrink-0 ${
+                  u.status === 'done' ? 'text-[#3D7A72]' :
+                  u.status === 'error' ? 'text-red-400' :
+                  u.status === 'waiting' ? 'text-gray-300' : 'text-gray-400'
+                }`}>
+                  {u.status === 'uploading' ? `${u.progress}%` : u.message}
+                </span>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-1">
-                <div className={`h-1 rounded-full transition-all ${progressColor[u.status]}`} style={{ width: `${u.progress}%` }} />
+              {/* Progress bar */}
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all duration-300 ${progressColor[u.status]}`}
+                  style={{ width: u.status === 'waiting' ? '0%' : `${u.progress}%` }}
+                />
               </div>
             </div>
           ))}
@@ -332,31 +425,43 @@ export default function ImagesPage() {
       )}
 
       {/* Transform modal */}
-      {showTransform && (
+      {showTransform && (() => {
+        const selectedImg = images.find(i => i.id === selectedId)
+        const currentEpsg = selectedImg?.epsg || ''
+        return (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
-            <h2 className="text-base font-semibold text-[#1C1C1C] mb-0.5">Reproject image</h2>
-            <p className="text-sm text-gray-400 mb-5">Set the target coordinate system and resolution</p>
+            <h2 className="text-base font-semibold text-[#1C1C1C] mb-0.5">Transform image</h2>
+            <p className="text-sm text-gray-400 mb-5">Change EPSG, resolution, or both. Leave EPSG blank to keep current.</p>
+            {currentEpsg && (
+              <p className="text-xs text-gray-400 mb-4 bg-gray-50 px-3 py-2 rounded-lg">
+                Current EPSG: <span className="font-mono font-medium text-gray-700">{currentEpsg}</span>
+              </p>
+            )}
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1.5">Target EPSG</label>
-                <input type="text" placeholder="e.g. 4326 or 32718" value={transform.new_epsg}
+                <label className="text-xs font-medium text-gray-500 block mb-1.5">Target EPSG <span className="font-normal text-gray-400">(optional)</span></label>
+                <input type="text" placeholder={currentEpsg ? `leave blank to keep ${currentEpsg}` : 'e.g. 32721'} value={transform.new_epsg}
                   onChange={e => setTransform({ ...transform, new_epsg: e.target.value })}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all" />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {(['new_resolution_x', 'new_resolution_y'] as const).map(k => (
                   <div key={k}>
-                    <label className="text-xs font-medium text-gray-500 block mb-1.5">Resolution {k.includes('x') ? 'X' : 'Y'} (m)</label>
+                    <label className="text-xs font-medium text-gray-500 block mb-1.5">Resolution {k.includes('x') ? 'X' : 'Y'} (m) <span className="font-normal text-gray-400">(opt.)</span></label>
                     <input type="text" placeholder="optional" value={transform[k]}
                       onChange={e => setTransform({ ...transform, [k]: e.target.value })}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6AA8A0] transition-all" />
                   </div>
                 ))}
               </div>
+              {!transform.new_epsg && !transform.new_resolution_x && !transform.new_resolution_y && (
+                <p className="text-xs text-amber-500">Fill in at least EPSG or one resolution value.</p>
+              )}
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={handleTransform} disabled={transforming}
+              <button onClick={handleTransform}
+                disabled={transforming || (!transform.new_epsg && !transform.new_resolution_x && !transform.new_resolution_y)}
                 className="flex-1 bg-[#3D7A72] text-white py-2.5 rounded-xl text-sm font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-50 shadow-sm">
                 {transforming ? 'Queuing...' : 'Run transform'}
               </button>
@@ -365,7 +470,8 @@ export default function ImagesPage() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Delete single modal */}
       {showDeleteConfirm && (
@@ -429,7 +535,7 @@ export default function ImagesPage() {
                   {paged.map(img => {
                     const isActive = activeImageIds.has(img.id)
                     return (
-                      <tr key={img.id} className="border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors">
+                      <tr key={img.id} className={`border-b border-gray-50 transition-colors duration-700 ${highlighted.has(img.id) ? 'bg-[#EEF7F6]' : 'hover:bg-[#F4F9F9]'}`}>
                         {/* Thumbnail column */}
                         <td className="px-4 py-3">
                           {thumbnailUrls[img.id] ? (
@@ -458,41 +564,40 @@ export default function ImagesPage() {
                         <td className="px-4 py-3 text-gray-500 text-xs">{fmt(img.filesize)}</td>
                         <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{fmtDate(img.created_at)}</td>
                         {/* Status */}
-                        <td className="px-4 py-3">
-                          {isActive ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 font-medium">
-                              <SpinIcon />Processing
+                        <td className="px-4 py-3 w-36 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1.5 ${isActive ? 'bg-amber-50 text-amber-600' : statusBadge[img.status] || 'bg-gray-50 text-gray-500'}`}>
+                              {isActive && <SpinIcon />}{isActive ? 'Processing' : img.status}
                             </span>
-                          ) : (
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusBadge[img.status] || 'bg-gray-50 text-gray-500'}`}>
-                              {img.status}
-                            </span>
-                          )}
+                            {isActive && (
+                              <button onClick={() => handleCancelImageJob(img.id)} disabled={cancellingImg === img.id}
+                                title="Cancel job"
+                                className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40">
+                                {cancellingImg === img.id ? <SpinIcon /> : <StopIcon />}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* Actions: Map → Reproject → Download → Delete */}
-                        <td className="px-4 py-3">
-                          {isDeleting && deletingId === img.id ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-400"><SpinIcon />Deleting...</span>
-                          ) : (
-                            <div className="flex items-center gap-0.5">
-                              <button onClick={() => viewOnMap(img)} title="View on map" disabled={img.status !== 'ready' || isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <MapIcon />
-                              </button>
-                              <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }} title="Reproject" disabled={isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <ReprojIcon />
-                              </button>
-                              <button onClick={() => handleDownload(img.id)} title="Download" disabled={img.status !== 'ready' || isActive}
-                                className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <DownloadIcon />
-                              </button>
-                              <button onClick={() => { setDeletingId(img.id); setShowDeleteConfirm(true) }} title="Delete" disabled={isActive}
-                                className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
-                                <TrashIcon />
-                              </button>
-                            </div>
-                          )}
+                        <td className="px-4 py-3 w-32">
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={() => viewOnMap(img)} title="View on map" disabled={img.status !== 'ready' || isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <MapIcon />
+                            </button>
+                            <button onClick={() => { setSelectedId(img.id); setShowTransform(true) }} title="Reproject" disabled={isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <ReprojIcon />
+                            </button>
+                            <button onClick={() => handleDownload(img.id)} title="Download" disabled={img.status !== 'ready' || isActive}
+                              className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              <DownloadIcon />
+                            </button>
+                            <button onClick={() => { setDeletingId(img.id); setShowDeleteConfirm(true) }} title="Delete" disabled={isActive || (isDeleting && deletingId === img.id)}
+                              className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-default">
+                              {isDeleting && deletingId === img.id ? <SpinIcon /> : <TrashIcon />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
