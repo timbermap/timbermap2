@@ -4,6 +4,10 @@ from typing import Optional
 from datetime import timedelta
 import json
 import os
+import time
+import requests as http_requests
+import google.auth.transport.requests
+import google.oauth2.id_token
 
 import database
 from google.cloud import storage
@@ -12,6 +16,41 @@ router        = APIRouter(prefix="/superadmin", tags=["superadmin"])
 models_router = APIRouter(prefix="/models", tags=["models"])
 
 GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
+CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-tjrp7tcqaa-uc.a.run.app")
+CLEANUP_INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")
+
+# Services checked by the System tab. Cloud Run URLs, not app routes — each
+# needs its own OIDC identity token now that raster/vector/cleanup are
+# locked down to the API's service account (ml-worker was always locked).
+MONITORED_SERVICES = {
+    "api":             os.getenv("API_PUBLIC_URL", "https://timbermap-api-tjrp7tcqaa-uc.a.run.app"),
+    "web":             "https://timbermap-web-788407107542.us-central1.run.app",
+    "raster-worker":   os.getenv("RASTER_WORKER_URL", "https://timbermap-raster-worker-tjrp7tcqaa-uc.a.run.app"),
+    "vector-worker":   os.getenv("VECTOR_WORKER_URL", "https://timbermap-vector-worker-tjrp7tcqaa-uc.a.run.app"),
+    "ml-worker":       os.getenv("ML_WORKER_URL", "https://timbermap-ml-worker-tjrp7tcqaa-uc.a.run.app"),
+    "cleanup-worker":  CLEANUP_WORKER_URL,
+}
+# api/web are public; the rest require an OIDC token to reach /health at all.
+PUBLIC_SERVICES = {"api", "web"}
+# web has no /health route — checking "/" and accepting redirects is enough
+# to know the container is up and serving.
+HEALTH_PATHS = {"web": "/"}
+
+
+def _id_token_headers(audience: str) -> dict:
+    try:
+        auth_req = google.auth.transport.requests.Request()
+        token = google.oauth2.id_token.fetch_id_token(auth_req, audience)
+        return {"Authorization": f"Bearer {token}"}
+    except Exception:
+        return {}
+
+
+def cleanup_worker_headers() -> dict:
+    headers = _id_token_headers(CLEANUP_WORKER_URL)
+    if CLEANUP_INTERNAL_SECRET:
+        headers["x-internal-secret"] = CLEANUP_INTERNAL_SECRET
+    return headers
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -51,6 +90,10 @@ class SetSuperadminRequest(BaseModel):
 
 class SetPlanRequest(BaseModel):
     is_custom: bool
+
+class EditJobRequest(BaseModel):
+    status: Optional[str] = None
+    message: Optional[str] = None
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
@@ -247,6 +290,27 @@ def set_superadmin(target_clerk_id: str, req: SetSuperadminRequest, _: str = Dep
     if not row: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "is_superadmin": req.is_superadmin}
 
+@router.delete("/users/{target_clerk_id}")
+def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(require_superadmin)):
+    """Irreversibly deletes a user's account: all images, vectors, jobs, GCS
+    files and PostGIS data (via the cleanup worker), then the users row."""
+    if target_clerk_id == admin_clerk_id:
+        raise HTTPException(400, "Can't delete your own account from here")
+    if not database.get_user_id(target_clerk_id):
+        raise HTTPException(404, "User not found")
+    try:
+        r = http_requests.delete(
+            f"{CLEANUP_WORKER_URL}/user/{target_clerk_id}",
+            headers=cleanup_worker_headers(), timeout=120,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(500, f"Cleanup worker failed: {e}")
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE clerk_id = %s", (target_clerk_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"deleted": True, "clerk_id": target_clerk_id}
+
 @router.put("/users/{target_clerk_id}/plan")
 def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require_superadmin)):
     """Tiers: basic (default) and active (has a paid model) are computed automatically
@@ -292,6 +356,24 @@ def list_queue(_: str = Depends(require_superadmin)):
         for f in ["created_at","started_at"]:
             if j.get(f): j[f] = j[f].isoformat()
     return {"jobs": jobs}
+
+@router.patch("/jobs/{job_id}")
+def edit_job(job_id: str, req: EditJobRequest, _: str = Depends(require_superadmin)):
+    """Manually edit a stuck job's status/message — for support/debugging,
+    not part of the normal job lifecycle."""
+    fields, params = [], []
+    if req.status is not None:
+        fields.append("status = %s"); params.append(req.status)
+    if req.message is not None:
+        fields.append("message = %s"); params.append(req.message)
+    if not fields:
+        raise HTTPException(400, "Nothing to update")
+    params.append(job_id)
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute(f"UPDATE jobs SET {', '.join(fields)} WHERE id = %s RETURNING id", params)
+    row = cur.fetchone(); conn.commit(); cur.close(); conn.close()
+    if not row: raise HTTPException(404, "Job not found")
+    return {"updated": True, "job_id": job_id}
 
 @router.delete("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, _: str = Depends(require_superadmin)):
@@ -508,6 +590,29 @@ def get_system_info(_: str = Depends(require_superadmin)):
     """)
     row = dict(cur.fetchone()); cur.close(); conn.close()
     return row
+
+@router.get("/system/health")
+def system_health(_: str = Depends(require_superadmin)):
+    results = []
+    for name, url in MONITORED_SERVICES.items():
+        headers = {} if name in PUBLIC_SERVICES else _id_token_headers(url)
+        path = HEALTH_PATHS.get(name, "/health")
+        started = time.monotonic()
+        try:
+            r = http_requests.get(f"{url}{path}", headers=headers, timeout=10, allow_redirects=False)
+            ok = r.status_code < 500
+            status_code = r.status_code
+        except Exception:
+            ok = False
+            status_code = None
+        results.append({
+            "name": name,
+            "url": url,
+            "up": ok,
+            "status_code": status_code,
+            "latency_ms": round((time.monotonic() - started) * 1000),
+        })
+    return {"services": results}
 
 # ── Public: models available for user ─────────────────────────────────────────
 
