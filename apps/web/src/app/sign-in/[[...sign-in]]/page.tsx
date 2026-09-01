@@ -32,6 +32,8 @@ export default function SignInPage() {
             </Link>
           </div>
           <SignIn
+            path="/sign-in"
+            routing="path"
             appearance={{
               elements: {
                 rootBox: 'w-full',

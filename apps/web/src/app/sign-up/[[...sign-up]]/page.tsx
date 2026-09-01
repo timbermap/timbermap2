@@ -28,6 +28,8 @@ export default function SignUpPage() {
             </Link>
           </div>
           <SignUp
+            path="/sign-up"
+            routing="path"
             appearance={{
               elements: {
                 rootBox: 'w-full',
