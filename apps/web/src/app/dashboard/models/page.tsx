@@ -375,56 +375,7 @@ export default function ModelsPage() {
 
       <div className="space-y-8">
 
-        {/* ── PRO section ─────────────────────────────────────────────── */}
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
-                Pro
-              </span>
-              <span className="text-xs text-gray-400 font-medium">Advanced models</span>
-            </div>
-            <div className="flex-1 h-px bg-gray-100"/>
-          </div>
-
-          {proModels.length === 0 ? (
-            isPro ? (
-              // Pro user but all pro models hidden
-              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-                <p className="text-gray-400 text-sm">All pro models are hidden.</p>
-                <p className="text-gray-300 text-xs mt-1">
-                  Go to{' '}
-                  <a href="/dashboard/catalog" className="text-[#3D7A72] hover:underline font-medium cursor-pointer">catalog</a>
-                  {' '}to make them visible.
-                </p>
-              </div>
-            ) : (
-              // Free user — upgrade CTA
-              <div className="bg-white rounded-2xl border border-amber-100 px-6 py-8 text-center">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mx-auto mb-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-amber-500">
-                    <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.449 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd"/>
-                  </svg>
-                </div>
-                <p className="text-gray-700 text-sm font-medium mb-1">Pro models require an upgrade</p>
-                <p className="text-gray-400 text-xs mb-4">Request access to advanced models from the catalog.</p>
-                <a href="/dashboard/catalog"
-                  className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
-                  <CatalogIcon />
-                  View catalog →
-                </a>
-              </div>
-            )
-          ) : (
-            <div className="space-y-3">
-              {proModels.map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
-            </div>
-          )}
-        </div>
-
-        {/* ── FREE section — hidden for pro users with no free models enabled ── */}
-        {(freeModels.length > 0 || !isPro) && (
+        {/* ── FREE section — your enabled models, always shown first ── */}
         <div>
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
@@ -438,7 +389,7 @@ export default function ModelsPage() {
           </div>
 
           {freeModels.length === 0 ? (
-            // Free user with no free models enabled — main CTA
+            // No free models enabled — main CTA
             <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
               <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
                 <CatalogIcon />
@@ -459,6 +410,57 @@ export default function ModelsPage() {
             </div>
           )}
         </div>
+
+        {/* ── PRO section — de-emphasized, below your own models ── */}
+        {(proModels.length > 0 || isPro) && (
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"/>
+                  Pro
+                </span>
+                <span className="text-xs text-gray-400 font-medium">Advanced models</span>
+              </div>
+              <div className="flex-1 h-px bg-gray-100"/>
+            </div>
+
+            {proModels.length === 0 ? (
+              // Pro user but all pro models hidden
+              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+                <p className="text-gray-400 text-sm">All pro models are hidden.</p>
+                <p className="text-gray-300 text-xs mt-1">
+                  Go to{' '}
+                  <a href="/dashboard/catalog" className="text-[#3D7A72] hover:underline font-medium cursor-pointer">catalog</a>
+                  {' '}to make them visible.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {proModels.map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Upsell strip — free users only, low-key, not a big centered box ── */}
+        {!isPro && (
+          <a href="/dashboard/catalog"
+            className="flex items-center justify-between gap-4 bg-amber-50/60 hover:bg-amber-50 border border-amber-100 rounded-xl px-5 py-3.5 transition-colors cursor-pointer group">
+            <div className="flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-amber-500 flex-shrink-0">
+                <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.449 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd"/>
+              </svg>
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-gray-700">More models available on Pro</span>
+                {' '}— tree crowns, tillage lines, fault detection, and more.
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-amber-700 group-hover:text-amber-800 whitespace-nowrap flex items-center gap-1">
+              <CatalogIcon />
+              View catalog →
+            </span>
+          </a>
         )}
 
       </div>
