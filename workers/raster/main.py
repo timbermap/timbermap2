@@ -336,11 +336,18 @@ def convert_to_cog(input_path: str, output_path: str, extra_warp_args: Optional[
 
 
 def generate_display_cog(cog_path: str, display_path: str) -> bool:
-    """Lightweight JPEG-compressed COG for map display — ~5-10x smaller than
-    the lossless DEFLATE COG, reusing its overviews (no re-warp needed).
-    Only safe for 8-bit 1-4 band imagery (JPEG's constraint in the COG
-    driver); returns False otherwise so the caller falls back to serving
-    the lossless COG unchanged."""
+    """Lightweight JPEG-compressed COG for map display.
+
+    8-bit imagery: reuses the lossless COG's overviews directly (no re-warp
+    needed) — the fast, common case for ordinary RGB(A) photos.
+
+    Non-8-bit imagery (e.g. UInt16 multispectral sensors — real values often
+    occupy a small slice of the range, e.g. 0-5000 of 0-65535, so displaying
+    them un-stretched renders as solid black): stretch each of the first 3
+    bands to 0-255 using their actual min/max (nodata-aware, approximate —
+    fast even on huge rasters) before JPEG-encoding. This is a real resample
+    pass since the existing overviews were built for the original bit depth.
+    """
     import subprocess
     from osgeo import gdal
     gdal.UseExceptions()
@@ -350,8 +357,9 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
         return False
     nbands = ds.RasterCount
     dtype  = ds.GetRasterBand(1).DataType
-    ds = None
-    if dtype != gdal.GDT_Byte or nbands not in (1, 2, 3, 4):
+    is_byte = dtype == gdal.GDT_Byte
+    if nbands not in (1, 2, 3, 4):
+        ds = None
         return False
 
     gdal_env = os.environ.copy()
@@ -359,15 +367,38 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
         "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
         "GDAL_HTTP_TIMEOUT": "300",
     })
-    cmd = [
-        "gdal_translate", "-of", "COG",
-        "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
-        "-co", "BLOCKSIZE=256",
-        "-co", "OVERVIEWS=FORCE_USE_EXISTING",
-        "-co", "BIGTIFF=YES",
-        "--config", "GDAL_CACHEMAX", "256",
-        cog_path, display_path,
-    ]
+
+    if is_byte:
+        ds = None
+        cmd = [
+            "gdal_translate", "-of", "COG",
+            "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
+            "-co", "BLOCKSIZE=256",
+            "-co", "OVERVIEWS=FORCE_USE_EXISTING",
+            "-co", "BIGTIFF=YES",
+            "--config", "GDAL_CACHEMAX", "256",
+            cog_path, display_path,
+        ]
+    else:
+        display_bands = min(nbands, 3)
+        band_args = []
+        for i in range(1, display_bands + 1):
+            band = ds.GetRasterBand(i)
+            bmin, bmax, _mean, _std = band.GetStatistics(True, True)
+            if bmax <= bmin:
+                bmax = bmin + 1
+            band_args += ["-b", str(i), f"-scale_{i}", str(bmin), str(bmax), "0", "255"]
+        ds = None
+        cmd = [
+            "gdal_translate", "-of", "COG", "-ot", "Byte",
+            *band_args,
+            "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
+            "-co", "BLOCKSIZE=256",
+            "-co", "BIGTIFF=YES",
+            "--config", "GDAL_CACHEMAX", "256",
+            cog_path, display_path,
+        ]
+
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
     if r.returncode != 0:
         logging.warning("Display COG generation failed for %s: %s", cog_path, r.stderr[:300])
