@@ -29,13 +29,15 @@ type Artifact = {
 type User = {
   id: string; clerk_id: string; email: string; username: string
   is_superadmin: boolean; created_at: string
-  plan: string; has_paid_model: boolean
+  plan: string; plan_expires_at: string | null; clerk_org_id: string | null; has_paid_model: boolean
   image_count: number; vector_count: number; job_count: number
   storage_bytes: number
 }
 type UserDetail = User & {
   account_id: string; org_role: string | null; account_plan: string; clerk_org_id: string | null
-  plan_expires_at: string | null
+  plan_expires_at: string | null; is_organization: boolean
+  storage_limit_gb_override: number | null; weekly_job_limit_override: number | null
+  tier_storage_limit_gb: number | null; tier_weekly_job_limit: number | null
   stats: Record<string,number>
   account_stats: { image_count: number; job_count: number; storage_bytes: number }
   teammates: { id: string; clerk_id: string; email: string; username: string; org_role: string | null }[]
@@ -43,44 +45,23 @@ type UserDetail = User & {
   recent_jobs: { id: string; type: string; status: string; model_name?: string; created_at: string }[]
 }
 
-// Tier is mostly computed, not stored: 'custom' is the only manual override
-// (users.plan = 'custom'); otherwise it's 'active' iff the user has a paid
-// model, else 'basic'. Keeps the tier from ever drifting out of sync with
-// what admins actually granted on the Models tab.
-function userTier(u: { plan: string; has_paid_model?: boolean }, hasPaidModel?: boolean): 'custom' | 'active' | 'basic' {
-  if (u.plan === 'custom') return 'custom'
-  return (hasPaidModel ?? u.has_paid_model) ? 'active' : 'basic'
-}
+// Tier is a plain manually-set field now (accounts.plan) — superadmin picks
+// it directly, independent of what models happen to be granted.
 const tierLabel: Record<string, string> = { custom: 'Custom', active: 'Active', basic: 'Basic' }
 const tierClass: Record<string, string> = {
   custom: 'bg-violet-50 text-violet-600 border-violet-200',
   active: 'bg-[#EEF7F6] text-[#3D7A72] border-[#A0CECC]',
   basic:  'bg-gray-100 text-gray-500 border-gray-200',
 }
-// Placeholder defaults — no enforcement exists yet, this is just visibility.
-// Adjust these once real plan limits are decided.
-// Basic: 10GB storage, max 5 processing jobs/week — confirmed real numbers.
-// Custom: unlimited/negotiated per account, also confirmed. Active is still
-// a placeholder pending a number from the business side.
-const TIER_STORAGE_LIMIT_BYTES: Record<string, number | null> = {
-  basic: 10e9,    // 10 GB
-  active: 50e9,   // 50 GB — placeholder, not yet confirmed
-  custom: null,   // unlimited / negotiated per account
-}
-const TIER_WEEKLY_JOBS: Record<string, number | null> = {
-  basic: 5,
-  active: null,
-  custom: null,
-}
-function StorageBar({ bytes, tier }: { bytes: number; tier: string }) {
-  const limit = TIER_STORAGE_LIMIT_BYTES[tier]
-  if (limit === null) return <p className="text-xs text-gray-400">{fmtBytes(bytes)} · unlimited</p>
+function StorageBar({ bytes, limitGb }: { bytes: number; limitGb: number | null }) {
+  if (limitGb == null) return <p className="text-xs text-gray-400">{fmtBytes(bytes)} · unlimited</p>
+  const limit = limitGb * 1e9
   const pct = Math.min(100, (bytes / limit) * 100)
   const over = bytes > limit
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-        <span>{fmtBytes(bytes)} / {fmtBytes(limit)}</span>
+        <span>{fmtBytes(bytes)} / {limitGb} GB</span>
         {over && <span className="text-red-500 font-medium">over limit</span>}
       </div>
       <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
@@ -544,6 +525,12 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [expirationEdit, setExpirationEdit] = useState('')
   const [savingExpiration, setSavingExpiration] = useState(false)
+  const [limitsEdit, setLimitsEdit] = useState({ storage: '', jobs: '' })
+  const [savingLimits, setSavingLimits] = useState(false)
+  const [savingTier, setSavingTier] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<{ title: string; body: string; confirmLabel: string; danger?: boolean; onConfirm: () => void } | null>(null)
+  const [deleteModalUser, setDeleteModalUser] = useState<UserDetail | null>(null)
+  const [deleteTyped, setDeleteTyped] = useState('')
   const h = { 'x-clerk-id': clerkId }
 
   useEffect(() => {
@@ -559,6 +546,10 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     const d = await fetch(`${api}/superadmin/users/${u.clerk_id}`, { headers: h }).then(r => r.json())
     setSelected(d)
     setExpirationEdit(d.plan_expires_at || '')
+    setLimitsEdit({
+      storage: d.storage_limit_gb_override != null ? String(d.storage_limit_gb_override) : '',
+      jobs: d.weekly_job_limit_override != null ? String(d.weekly_job_limit_override) : '',
+    })
     setLoadingDetail(false)
   }
 
@@ -578,41 +569,46 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     setUsers(ul.users || [])
   }
 
-  async function toggleSuperadmin(user: UserDetail) {
-    if (!confirm(`${user.is_superadmin ? 'Remove' : 'Grant'} superadmin for ${user.email}?`)) return
-    await fetch(`${api}/superadmin/users/${user.clerk_id}/superadmin`, {
-      method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_superadmin: !user.is_superadmin }),
+  function askToggleSuperadmin(user: UserDetail) {
+    setConfirmModal({
+      title: user.is_superadmin ? 'Remove superadmin' : 'Grant superadmin',
+      body: `${user.is_superadmin ? 'Remove' : 'Grant'} superadmin access for ${user.email}?`,
+      confirmLabel: user.is_superadmin ? 'Remove access' : 'Grant access',
+      danger: user.is_superadmin,
+      onConfirm: async () => {
+        await fetch(`${api}/superadmin/users/${user.clerk_id}/superadmin`, {
+          method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_superadmin: !user.is_superadmin }),
+        })
+        const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
+        setSelected(d)
+        setConfirmModal(null)
+      },
     })
-    const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
-    setSelected(d)
   }
 
-  async function deleteAccount(user: UserDetail) {
-    const typed = prompt(
-      `This permanently deletes ${user.email} — all images, vectors, jobs and files. This cannot be undone.\n\nType the email to confirm:`
-    )
-    if (typed !== user.email) {
-      if (typed !== null) alert('Email did not match — nothing deleted.')
-      return
-    }
-    await fetch(`${api}/superadmin/users/${user.clerk_id}`, { method: 'DELETE', headers: h })
+  async function confirmDeleteAccount() {
+    if (!deleteModalUser || deleteTyped !== deleteModalUser.email) return
+    await fetch(`${api}/superadmin/users/${deleteModalUser.clerk_id}`, { method: 'DELETE', headers: h })
     setSelected(null)
+    setDeleteModalUser(null)
+    setDeleteTyped('')
     const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
     setUsers(ul.users || [])
   }
 
-  async function toggleCustomPlan(user: UserDetail) {
-    const isCustom = user.account_plan === 'custom'
-    if (!confirm(`${isCustom ? 'Remove custom tier from' : 'Mark'} ${user.email}${isCustom ? '' : ' as custom tier'}?`)) return
-    await fetch(`${api}/superadmin/users/${user.clerk_id}/plan`, {
-      method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_custom: !isCustom }),
-    })
-    const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
-    setSelected(d)
-    const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
-    setUsers(ul.users || [])
+  async function setTier(user: UserDetail, tier: string) {
+    setSavingTier(true)
+    try {
+      await fetch(`${api}/superadmin/users/${user.clerk_id}/plan`, {
+        method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier }),
+      })
+      const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
+      setSelected(d)
+      const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
+      setUsers(ul.users || [])
+    } finally { setSavingTier(false) }
   }
 
   async function savePlanExpiration(user: UserDetail, dateStr: string) {
@@ -626,6 +622,25 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
       setSelected(d)
       setExpirationEdit(d.plan_expires_at || '')
     } finally { setSavingExpiration(false) }
+  }
+
+  async function saveLimits(user: UserDetail) {
+    setSavingLimits(true)
+    try {
+      await fetch(`${api}/superadmin/users/${user.clerk_id}/limits`, {
+        method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_limit_gb: limitsEdit.storage.trim() === '' ? null : Number(limitsEdit.storage),
+          weekly_job_limit: limitsEdit.jobs.trim() === '' ? null : Number(limitsEdit.jobs),
+        }),
+      })
+      const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
+      setSelected(d)
+      setLimitsEdit({
+        storage: d.storage_limit_gb_override != null ? String(d.storage_limit_gb_override) : '',
+        jobs: d.weekly_job_limit_override != null ? String(d.weekly_job_limit_override) : '',
+      })
+    } finally { setSavingLimits(false) }
   }
 
   if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
@@ -646,9 +661,10 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                 onClick={() => openUser(u)}>
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-900 text-sm truncate max-w-[150px]">{u.email}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     {u.is_superadmin && <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">admin</span>}
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier(u)]}`}>{tierLabel[userTier(u)]}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[u.plan]}`}>{tierLabel[u.plan] || u.plan}</span>
+                    {u.clerk_org_id && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">org</span>}
                     <span className="text-xs text-gray-400">{u.username}</span>
                   </div>
                 </td>
@@ -671,32 +687,31 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-gray-900">{selected.email}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))]}`}>
-                      {tierLabel[userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))]}
-                    </span>
+                    {selected.is_organization && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">Organization</span>}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">Joined {fmtDate(selected.created_at)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1.5">
-                  <button onClick={() => toggleSuperadmin(selected)}
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
-                      selected.is_superadmin
-                        ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
-                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
-                    }`}>
-                    {selected.is_superadmin ? '⚡ Superadmin' : 'Make admin'}
-                  </button>
-                  <button onClick={() => toggleCustomPlan(selected)}
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
-                      selected.account_plan === 'custom'
-                        ? 'bg-violet-50 text-violet-600 border-violet-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
-                        : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200'
-                    }`}>
-                    {selected.account_plan === 'custom' ? '✦ Custom tier' : 'Mark custom'}
-                  </button>
-                </div>
+                <button onClick={() => askToggleSuperadmin(selected)}
+                  className={`text-xs px-2.5 py-1 rounded-full font-medium border transition-colors ${
+                    selected.is_superadmin
+                      ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                      : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
+                  }`}>
+                  {selected.is_superadmin ? '⚡ Superadmin' : 'Make admin'}
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-gray-400 flex-shrink-0">Tier</span>
+                <select value={selected.account_plan} disabled={savingTier}
+                  onChange={e => setTier(selected, e.target.value)}
+                  className={`text-xs font-medium px-2.5 py-1.5 rounded-lg border cursor-pointer disabled:opacity-50 ${tierClass[selected.account_plan] || 'border-gray-200'}`}>
+                  <option value="basic">Basic</option>
+                  <option value="active">Active</option>
+                  <option value="custom">Custom</option>
+                </select>
+                {savingTier && <SpinIcon />}
               </div>
               <div className="flex items-center gap-2 mb-3 bg-gray-50 rounded-xl px-3 py-2">
                 <span className="text-xs text-gray-400 flex-shrink-0">Plan expires</span>
@@ -716,6 +731,21 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   </button>
                 )}
               </div>
+              <div className="flex items-center gap-2 mb-3 bg-gray-50 rounded-xl px-3 py-2 flex-wrap">
+                <span className="text-xs text-gray-400 flex-shrink-0">Custom limits</span>
+                <input type="number" min="0" placeholder={selected.tier_storage_limit_gb != null ? `${selected.tier_storage_limit_gb} GB (tier)` : 'unlimited'}
+                  value={limitsEdit.storage} onChange={e => setLimitsEdit(v => ({ ...v, storage: e.target.value }))}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white w-32 focus:outline-none focus:border-[#6AA8A0]" />
+                <span className="text-xs text-gray-300">GB storage</span>
+                <input type="number" min="0" placeholder={selected.tier_weekly_job_limit != null ? `${selected.tier_weekly_job_limit} (tier)` : 'unlimited'}
+                  value={limitsEdit.jobs} onChange={e => setLimitsEdit(v => ({ ...v, jobs: e.target.value }))}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white w-24 focus:outline-none focus:border-[#6AA8A0]" />
+                <span className="text-xs text-gray-300">jobs/week</span>
+                <button onClick={() => saveLimits(selected)} disabled={savingLimits}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-[#3D7A72] text-white font-medium disabled:opacity-40 hover:bg-[#2A5750] transition-colors ml-auto">
+                  {savingLimits ? '...' : 'Save'}
+                </button>
+              </div>
               <p className="text-xs text-gray-300 mb-1.5">This user's own activity</p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {[
@@ -734,11 +764,10 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
               </p>
               <StorageBar
                 bytes={selected.account_stats.storage_bytes || 0}
-                tier={userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))}
+                limitGb={selected.storage_limit_gb_override ?? selected.tier_storage_limit_gb}
               />
               {(() => {
-                const tier = userTier({ plan: selected.account_plan }, selected.models.some(m => !m.is_free))
-                const weekly = TIER_WEEKLY_JOBS[tier]
+                const weekly = selected.weekly_job_limit_override ?? selected.tier_weekly_job_limit
                 return weekly !== null && weekly !== undefined ? (
                   <p className="text-xs text-gray-300 mt-2">Limit: {weekly} jobs/week (not yet enforced)</p>
                 ) : null
@@ -815,7 +844,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
             <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-5">
               <p className="text-xs font-medium tracking-widest uppercase text-red-400 mb-2">Danger zone</p>
               <p className="text-xs text-gray-400 mb-3">Permanently deletes this account and all its data. Cannot be undone.</p>
-              <button onClick={() => deleteAccount(selected)}
+              <button onClick={() => { setDeleteModalUser(selected); setDeleteTyped('') }}
                 className="text-xs px-3 py-1.5 rounded-xl font-medium border bg-red-50 text-red-600 border-red-200 hover:bg-red-100 transition-colors">
                 Delete account
               </button>
@@ -828,6 +857,54 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
           </div>
         )}
       </div>
+
+      {/* Generic confirm modal (superadmin grant/revoke, etc.) */}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
+            <h2 className="text-base font-semibold text-[#1C1C1C] mb-1">{confirmModal.title}</h2>
+            <p className="text-sm text-gray-500 mb-5">{confirmModal.body}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmModal.onConfirm}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  confirmModal.danger ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-[#3D7A72] hover:bg-[#2A5750] text-white'
+                }`}>
+                {confirmModal.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete account modal — requires typing the exact email */}
+      {deleteModalUser && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
+            <h2 className="text-base font-semibold text-[#1C1C1C] mb-1">Delete account</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              This permanently deletes <span className="font-medium text-gray-700">{deleteModalUser.email}</span> — all images, vectors, jobs and files. This cannot be undone.
+            </p>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Type the email to confirm</label>
+            <input value={deleteTyped} onChange={e => setDeleteTyped(e.target.value)}
+              placeholder={deleteModalUser.email}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:border-red-300" />
+            <div className="flex gap-3">
+              <button onClick={() => { setDeleteModalUser(null); setDeleteTyped('') }}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDeleteAccount} disabled={deleteTyped !== deleteModalUser.email}
+                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-medium disabled:opacity-40 transition-colors">
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

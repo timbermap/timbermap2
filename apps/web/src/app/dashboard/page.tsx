@@ -198,28 +198,25 @@ export default function Dashboard() {
   const [vectorModal, setVectorModal] = useState<{ id: string; filename: string } | null>(null)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
 
-  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number; jobs_this_week: number } | null>(null)
-  const [tierLimits,  setTierLimits]  = useState<Record<string, { storage_limit_gb: number | null; weekly_job_limit: number | null }>>({})
+  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number; jobs_this_week: number; storage_limit_gb: number | null; weekly_job_limit: number | null } | null>(null)
 
   useEffect(() => {
     if (!isLoaded || !user) return
     async function load() {
       try {
-        const [iR, vR, jR, mR, aR, tR] = await Promise.all([
+        const [iR, vR, jR, mR, aR] = await Promise.all([
           fetch(`${API}/images/${user!.id}`).catch(() => null),
           fetch(`${API}/vectors/${user!.id}`).catch(() => null),
           fetch(`${API}/jobs/${user!.id}`).catch(() => null),
           fetch('/api/catalog/models').catch(() => null),
           fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
-          fetch(`${API}/account/tier-limits`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
         ])
-        const [iD, vD, jD, mD, aD, tD] = await Promise.all([
+        const [iD, vD, jD, mD, aD] = await Promise.all([
           (iR?.ok ? iR.json().catch(() => ({})) : {}) as { images?: ImageFile[] },
           (vR?.ok ? vR.json().catch(() => ({})) : {}) as { vectors?: VectorFile[] },
           (jR?.ok ? jR.json().catch(() => ({})) : {}) as { jobs?: Job[] },
           (mR?.ok ? mR.json().catch(() => []) : [])   as Model[],
-          (aR?.ok ? aR.json().catch(() => null) : null) as { account_plan: string; storage_bytes: number; jobs_this_week: number } | null,
-          (tR?.ok ? tR.json().catch(() => ({ tiers: [] })) : { tiers: [] }) as { tiers: { tier: string; storage_limit_gb: number | null; weekly_job_limit: number | null }[] },
+          (aR?.ok ? aR.json().catch(() => null) : null) as { account_plan: string; storage_bytes: number; jobs_this_week: number; storage_limit_gb: number | null; weekly_job_limit: number | null } | null,
         ])
         const imgs: ImageFile[] = iD.images || []
         setImages(imgs)
@@ -227,9 +224,6 @@ export default function Dashboard() {
         setJobs(jD.jobs || [])
         setModels(Array.isArray(mD) ? mD : [])
         setAccountInfo(aD)
-        const limitsMap: Record<string, { storage_limit_gb: number | null; weekly_job_limit: number | null }> = {}
-        ;(tD.tiers || []).forEach(t => { limitsMap[t.tier] = { storage_limit_gb: t.storage_limit_gb, weekly_job_limit: t.weekly_job_limit } })
-        setTierLimits(limitsMap)
         setLoading(false)
 
         // Fetch thumbnails for 3 most recent ready images
@@ -253,10 +247,9 @@ export default function Dashboard() {
   const name    = user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'there'
   const isPro   = models.some(m => !m.is_free && m.has_access)
   const planLabel = isPro ? 'Pro account' : 'Free account'
-  const tier = accountInfo?.account_plan === 'custom' ? 'custom' : (isPro ? 'active' : 'basic')
-  const limit = tierLimits[tier]
-  const storageLimitBytes = limit?.storage_limit_gb != null ? limit.storage_limit_gb * 1e9 : null
-  const jobsLimit = limit?.weekly_job_limit ?? null
+  const tier = accountInfo?.account_plan || 'basic'
+  const storageLimitBytes = accountInfo?.storage_limit_gb != null ? accountInfo.storage_limit_gb * 1e9 : null
+  const jobsLimit = accountInfo?.weekly_job_limit ?? null
 
   const readyImages       = images.filter(i => i.status === 'ready')
   const imagesThisWeek    = images.filter(i => i.created_at && isThisWeek(i.created_at)).length

@@ -110,36 +110,18 @@ export default function ImagesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
-  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number } | null>(null)
-  const [tierLimits,  setTierLimits]  = useState<Record<string, { storage_limit_gb: number | null }>>({})
-  const [isPro, setIsPro] = useState(false)
+  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number; storage_limit_gb: number | null } | null>(null)
 
   useEffect(() => {
     if (!isLoaded || !user) return
-    async function loadPlan() {
-      try {
-        const [mR, aR, tR] = await Promise.all([
-          fetch('/api/catalog/models').catch(() => null),
-          fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
-          fetch(`${API}/account/tier-limits`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
-        ])
-        const [mD, aD, tD] = await Promise.all([
-          (mR?.ok ? mR.json().catch(() => []) : [])   as { is_free: boolean; has_access: boolean }[],
-          (aR?.ok ? aR.json().catch(() => null) : null) as { account_plan: string; storage_bytes: number } | null,
-          (tR?.ok ? tR.json().catch(() => ({ tiers: [] })) : { tiers: [] }) as { tiers: { tier: string; storage_limit_gb: number | null }[] },
-        ])
-        setIsPro(Array.isArray(mD) && mD.some(m => !m.is_free && m.has_access))
-        setAccountInfo(aD)
-        const limitsMap: Record<string, { storage_limit_gb: number | null }> = {}
-        ;(tD.tiers || []).forEach(t => { limitsMap[t.tier] = { storage_limit_gb: t.storage_limit_gb } })
-        setTierLimits(limitsMap)
-      } catch (e) { console.error(e) }
-    }
-    loadPlan()
+    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.ok ? r.json() : null)
+      .then(setAccountInfo)
+      .catch(() => {})
   }, [isLoaded, user, API])
 
-  const planTier = accountInfo?.account_plan === 'custom' ? 'custom' : (isPro ? 'active' : 'basic')
-  const planStorageLimitGb = tierLimits[planTier]?.storage_limit_gb ?? null
+  const planTier = accountInfo?.account_plan || 'basic'
+  const planStorageLimitGb = accountInfo?.storage_limit_gb ?? null
   const planStorageUsedGb  = accountInfo ? accountInfo.storage_bytes / 1e9 : null
 
   const fetchData = useCallback(async () => {

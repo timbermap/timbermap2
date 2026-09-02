@@ -1,12 +1,15 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useUser } from '@clerk/nextjs'
+import Link from 'next/link'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
-type AccountInfo = { account_plan: string; plan_expires_at: string | null; storage_bytes: number; jobs_this_week: number }
-type TierLimit = { tier: string; storage_limit_gb: number | null; weekly_job_limit: number | null }
-type Model = { is_free: boolean; has_access: boolean }
+type AccountInfo = {
+  account_plan: string; plan_expires_at: string | null; is_organization: boolean
+  storage_limit_gb: number | null; weekly_job_limit: number | null; has_custom_limits: boolean
+  storage_bytes: number; jobs_this_week: number
+}
 
 const TIER_LABEL: Record<string, string> = { basic: 'Basic', active: 'Active', custom: 'Custom' }
 const TIER_BADGE: Record<string, string> = {
@@ -27,8 +30,6 @@ function fmtDate(iso: string) {
 export default function SubscriptionPage() {
   const { user, isLoaded } = useUser()
   const [account, setAccount]   = useState<AccountInfo | null>(null)
-  const [tiers, setTiers]       = useState<Record<string, TierLimit>>({})
-  const [isPro, setIsPro]       = useState(false)
   const [loading, setLoading]   = useState(true)
   const [message, setMessage]   = useState('')
   const [sending, setSending]   = useState(false)
@@ -36,24 +37,10 @@ export default function SubscriptionPage() {
 
   useEffect(() => {
     if (!isLoaded || !user) return
-    async function load() {
-      try {
-        const [aR, tR, mR] = await Promise.all([
-          fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user!.id } }),
-          fetch(`${API}/account/tier-limits`, { headers: { 'x-clerk-id': user!.id } }),
-          fetch('/api/catalog/models').catch(() => null),
-        ])
-        const aD: AccountInfo = await aR.json()
-        const tD: { tiers: TierLimit[] } = await tR.json()
-        const mD: Model[] = mR?.ok ? await mR.json().catch(() => []) : []
-        setAccount(aD)
-        const map: Record<string, TierLimit> = {}
-        ;(tD.tiers || []).forEach(t => { map[t.tier] = t })
-        setTiers(map)
-        setIsPro(Array.isArray(mD) && mD.some(m => !m.is_free && m.has_access))
-      } finally { setLoading(false) }
-    }
-    load()
+    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.json())
+      .then(setAccount)
+      .finally(() => setLoading(false))
   }, [isLoaded, user])
 
   async function submitRequest() {
@@ -81,9 +68,8 @@ export default function SubscriptionPage() {
     )
   }
 
-  const tier = account.account_plan === 'custom' ? 'custom' : (isPro ? 'active' : 'basic')
-  const limit = tiers[tier]
-  const storageLimitBytes = limit?.storage_limit_gb != null ? limit.storage_limit_gb * 1e9 : null
+  const tier = account.account_plan
+  const storageLimitBytes = account.storage_limit_gb != null ? account.storage_limit_gb * 1e9 : null
   const storagePct = storageLimitBytes ? Math.min(100, (account.storage_bytes / storageLimitBytes) * 100) : 0
 
   return (
@@ -96,8 +82,8 @@ export default function SubscriptionPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-xs text-gray-400 mb-1">Current plan</p>
-            <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full ${TIER_BADGE[tier]}`}>
-              {TIER_LABEL[tier]}
+            <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full ${TIER_BADGE[tier] || TIER_BADGE.basic}`}>
+              {TIER_LABEL[tier] || tier}
             </span>
           </div>
           <div className="text-right">
@@ -111,9 +97,9 @@ export default function SubscriptionPage() {
         {/* Storage usage */}
         <div>
           <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
-            <span>Storage used</span>
+            <span>Storage used{account.has_custom_limits && <span className="text-[#96814A]"> · custom limit</span>}</span>
             <span className="font-medium text-gray-600">
-              {fmtBytes(account.storage_bytes)}{storageLimitBytes ? ` / ${limit!.storage_limit_gb} GB` : ' (unlimited)'}
+              {fmtBytes(account.storage_bytes)}{storageLimitBytes ? ` / ${account.storage_limit_gb} GB` : ' (unlimited)'}
             </span>
           </div>
           {storageLimitBytes && (
@@ -122,12 +108,34 @@ export default function SubscriptionPage() {
             </div>
           )}
         </div>
-        {limit?.weekly_job_limit != null && (
+        {account.weekly_job_limit != null && (
           <p className="text-xs text-gray-400 mt-3">
-            <span className="font-medium text-gray-600">{account.jobs_this_week}</span> / {limit.weekly_job_limit} processing jobs used this week
+            <span className="font-medium text-gray-600">{account.jobs_this_week}</span> / {account.weekly_job_limit} processing jobs used this week
           </p>
         )}
       </div>
+
+      {/* Organization */}
+      {account.is_organization ? (
+        <div className="bg-[#EEF7F6] border border-[#A0CECC]/50 rounded-2xl p-5 mb-5">
+          <p className="text-sm font-semibold text-[#2A5750] mb-1">Organization account</p>
+          <p className="text-xs text-[#3D7A72] mb-3">Usage above is shared across your whole team.</p>
+          <Link href="/dashboard/team" className="text-xs font-semibold text-[#3D7A72] hover:underline">
+            Manage team →
+          </Link>
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
+          <p className="text-sm font-semibold text-[#1A2624] mb-1">Working alone?</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Create an organization to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
+          </p>
+          <Link href="/create-organization"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D7A72] hover:underline">
+            Create organization →
+          </Link>
+        </div>
+      )}
 
       {/* Upgrade */}
       {tier !== 'custom' && (

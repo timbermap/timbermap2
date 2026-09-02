@@ -299,7 +299,7 @@ def superadmin_list_users():
         SELECT
             u.id, u.clerk_id, u.email, u.username, u.is_superadmin, u.created_at,
             u.account_id, u.org_role,
-            a.plan,
+            a.plan, a.plan_expires_at, a.clerk_org_id,
             (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS image_count,
             (SELECT COUNT(*) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = u.account_id) AS vector_count,
             (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = u.account_id) AS job_count,
@@ -362,6 +362,22 @@ def superadmin_set_plan(clerk_id: str, plan: str):
     conn.close()
     return row is not None
 
+
+def superadmin_set_account_limits(clerk_id: str, storage_limit_gb, weekly_job_limit):
+    """Per-account overrides — null means 'fall back to the tier default'."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE accounts SET storage_limit_gb_override = %s, weekly_job_limit_override = %s
+        WHERE id = (SELECT account_id FROM users WHERE clerk_id = %s)
+        RETURNING id
+    """, (storage_limit_gb, weekly_job_limit, clerk_id))
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row is not None
+
 def superadmin_set_plan_expiration(clerk_id: str, plan_expires_at):
     conn = get_conn()
     cur = conn.cursor()
@@ -381,7 +397,8 @@ def superadmin_get_user_detail(clerk_id: str):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT u.*, a.plan AS account_plan, a.plan_expires_at, a.clerk_org_id
+        SELECT u.*, a.plan AS account_plan, a.plan_expires_at, a.clerk_org_id,
+               a.storage_limit_gb_override, a.weekly_job_limit_override
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
     """, (clerk_id,))
@@ -390,6 +407,12 @@ def superadmin_get_user_detail(clerk_id: str):
         cur.close(); conn.close()
         return None
     user = dict(user)
+    user["is_organization"] = user["clerk_org_id"] is not None
+
+    cur.execute("SELECT storage_limit_gb, weekly_job_limit FROM tier_limits WHERE tier = %s", (user["account_plan"],))
+    tier_default = cur.fetchone() or {"storage_limit_gb": None, "weekly_job_limit": None}
+    user["tier_storage_limit_gb"] = tier_default["storage_limit_gb"]
+    user["tier_weekly_job_limit"] = tier_default["weekly_job_limit"]
 
     owner_id = user['id']
     account_id = user['account_id']
@@ -754,7 +777,8 @@ def get_account_info(clerk_id: str):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT u.id, u.account_id, u.org_role, a.plan, a.plan_expires_at
+        SELECT u.id, u.account_id, u.org_role, a.plan, a.plan_expires_at, a.clerk_org_id,
+               a.storage_limit_gb_override, a.weekly_job_limit_override
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
     """, (clerk_id,))
@@ -763,6 +787,11 @@ def get_account_info(clerk_id: str):
         cur.close(); conn.close()
         return None
     me = dict(me)
+
+    cur.execute("SELECT storage_limit_gb, weekly_job_limit FROM tier_limits WHERE tier = %s", (me["plan"],))
+    tier_default = cur.fetchone() or {"storage_limit_gb": None, "weekly_job_limit": None}
+    storage_limit_gb = me["storage_limit_gb_override"] if me["storage_limit_gb_override"] is not None else tier_default["storage_limit_gb"]
+    weekly_job_limit = me["weekly_job_limit_override"] if me["weekly_job_limit_override"] is not None else tier_default["weekly_job_limit"]
 
     cur.execute("""
         SELECT clerk_id, email, username, org_role
@@ -811,6 +840,10 @@ def get_account_info(clerk_id: str):
         "org_role": me["org_role"],
         "account_plan": me["plan"],
         "plan_expires_at": me["plan_expires_at"].isoformat() if me["plan_expires_at"] else None,
+        "is_organization": me["clerk_org_id"] is not None,
+        "storage_limit_gb": storage_limit_gb,
+        "weekly_job_limit": weekly_job_limit,
+        "has_custom_limits": me["storage_limit_gb_override"] is not None or me["weekly_job_limit_override"] is not None,
         "storage_bytes": usage["storage_bytes"],
         "jobs_this_week": usage["jobs_this_week"],
         "teammates": teammates,

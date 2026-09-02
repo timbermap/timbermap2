@@ -89,10 +89,14 @@ class SetSuperadminRequest(BaseModel):
     is_superadmin: bool
 
 class SetPlanRequest(BaseModel):
-    is_custom: bool
+    tier: str  # "basic" | "active" | "custom"
 
 class SetPlanExpirationRequest(BaseModel):
     plan_expires_at: Optional[str] = None  # "YYYY-MM-DD", or null to clear it
+
+class SetAccountLimitsRequest(BaseModel):
+    storage_limit_gb: Optional[int] = None  # null clears the override, falls back to tier default
+    weekly_job_limit: Optional[int] = None
 
 class SetTierLimitRequest(BaseModel):
     storage_limit_gb: Optional[int] = None
@@ -269,6 +273,7 @@ def list_users(_: str = Depends(require_superadmin)):
     users = database.superadmin_list_users()
     for u in users:
         if u.get("created_at"): u["created_at"] = u["created_at"].isoformat()
+        if u.get("plan_expires_at"): u["plan_expires_at"] = u["plan_expires_at"].isoformat()
     return {"users": users}
 
 @router.get("/users/{target_clerk_id}")
@@ -333,18 +338,26 @@ def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(requ
 
 @router.put("/users/{target_clerk_id}/plan")
 def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require_superadmin)):
-    """Tiers: basic (default) and active (has a paid model) are computed automatically
-    from model access. 'custom' is the only manually-assigned override."""
-    plan = "custom" if req.is_custom else "free"
-    ok = database.superadmin_set_plan(target_clerk_id, plan)
+    """Tier is fully manual now — superadmin picks basic/active/custom directly,
+    independent of what models the account happens to have granted."""
+    if req.tier not in ("basic", "active", "custom"):
+        raise HTTPException(400, "tier must be 'basic', 'active' or 'custom'")
+    ok = database.superadmin_set_plan(target_clerk_id, req.tier)
     if not ok: raise HTTPException(404, "User not found")
-    return {"updated": True, "clerk_id": target_clerk_id, "plan": plan}
+    return {"updated": True, "clerk_id": target_clerk_id, "plan": req.tier}
 
 @router.put("/users/{target_clerk_id}/plan-expiration")
 def set_plan_expiration(target_clerk_id: str, req: SetPlanExpirationRequest, _: str = Depends(require_superadmin)):
     ok = database.superadmin_set_plan_expiration(target_clerk_id, req.plan_expires_at)
     if not ok: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "plan_expires_at": req.plan_expires_at}
+
+@router.put("/users/{target_clerk_id}/limits")
+def set_account_limits(target_clerk_id: str, req: SetAccountLimitsRequest, _: str = Depends(require_superadmin)):
+    """Per-account overrides — leave a field null to fall back to the tier default."""
+    ok = database.superadmin_set_account_limits(target_clerk_id, req.storage_limit_gb, req.weekly_job_limit)
+    if not ok: raise HTTPException(404, "User not found")
+    return {"updated": True, "clerk_id": target_clerk_id, "storage_limit_gb": req.storage_limit_gb, "weekly_job_limit": req.weekly_job_limit}
 
 @router.get("/tier-limits")
 def get_tier_limits(_: str = Depends(require_superadmin)):
