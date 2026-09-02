@@ -246,8 +246,8 @@ export default function Dashboard() {
 
   const name    = user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'there'
   const isPro   = models.some(m => !m.is_free && m.has_access)
-  const planLabel = isPro ? 'Pro account' : 'Free account'
   const tier = accountInfo?.account_plan || 'basic'
+  const planLabel = tier === 'custom' ? 'Custom account' : tier === 'active' ? 'Active account' : 'Basic account'
   const storageLimitBytes = accountInfo?.storage_limit_gb != null ? accountInfo.storage_limit_gb * 1e9 : null
   const jobsLimit = accountInfo?.weekly_job_limit ?? null
 
@@ -294,7 +294,7 @@ export default function Dashboard() {
           <p className="text-gray-400 mt-0.5 text-sm">
             Welcome back, {name}
             {' · '}
-            <span className={`font-medium ${isPro ? 'text-[#96814A]' : 'text-[#6AA8A0]'}`}>{planLabel}</span>
+            <span className={`font-medium ${tier !== 'basic' ? 'text-[#96814A]' : 'text-[#6AA8A0]'}`}>{planLabel}</span>
           </p>
         </div>
         <Link href="/dashboard/catalog"

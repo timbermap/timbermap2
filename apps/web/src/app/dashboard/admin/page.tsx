@@ -1,6 +1,6 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -523,6 +523,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [selected, setSelected]     = useState<UserDetail | null>(null)
   const [loading, setLoading]       = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [loadingUserId, setLoadingUserId]   = useState<string | null>(null)
   const [expirationEdit, setExpirationEdit] = useState('')
   const [savingExpiration, setSavingExpiration] = useState(false)
   const [limitsEdit, setLimitsEdit] = useState({ storage: '', jobs: '' })
@@ -531,6 +532,9 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [confirmModal, setConfirmModal] = useState<{ title: string; body: string; confirmLabel: string; danger?: boolean; onConfirm: () => void } | null>(null)
   const [deleteModalUser, setDeleteModalUser] = useState<UserDetail | null>(null)
   const [deleteTyped, setDeleteTyped] = useState('')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const USERS_PAGE_SIZE = 20
   const h = { 'x-clerk-id': clerkId }
 
   useEffect(() => {
@@ -541,8 +545,11 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     .finally(() => setLoading(false))
   }, [clerkId, api])
 
-  async function openUser(u: User) {
+  async function toggleUser(u: User) {
+    if (selected?.clerk_id === u.clerk_id) { setSelected(null); return }
+    setSelected(null)
     setLoadingDetail(true)
+    setLoadingUserId(u.clerk_id)
     const d = await fetch(`${api}/superadmin/users/${u.clerk_id}`, { headers: h }).then(r => r.json())
     setSelected(d)
     setExpirationEdit(d.plan_expires_at || '')
@@ -551,6 +558,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
       jobs: d.weekly_job_limit_override != null ? String(d.weekly_job_limit_override) : '',
     })
     setLoadingDetail(false)
+    setLoadingUserId(null)
   }
 
   async function toggleModel(user: UserDetail, modelId: string, hasAccess: boolean) {
@@ -589,12 +597,16 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
 
   async function confirmDeleteAccount() {
     if (!deleteModalUser || deleteTyped !== deleteModalUser.email) return
-    await fetch(`${api}/superadmin/users/${deleteModalUser.clerk_id}`, { method: 'DELETE', headers: h })
+    const res = await fetch(`${api}/superadmin/users/${deleteModalUser.clerk_id}`, { method: 'DELETE', headers: h })
+      .then(r => r.json()).catch(() => null)
     setSelected(null)
     setDeleteModalUser(null)
     setDeleteTyped('')
     const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
     setUsers(ul.users || [])
+    if (res && res.clerk_user_deleted === false) {
+      alert('Data was deleted, but removing the user from Clerk failed — check the Clerk dashboard and remove them manually if needed.')
+    }
   }
 
   async function setTier(user: UserDetail, tier: string) {
@@ -645,10 +657,24 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
 
   if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
 
+  const q = search.trim().toLowerCase()
+  const filteredUsers = q
+    ? users.filter(u => u.email.toLowerCase().includes(q) || u.username?.toLowerCase().includes(q))
+    : users
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PAGE_SIZE))
+  const curPage = Math.min(page, totalPages)
+  const pagedUsers = filteredUsers.slice((curPage - 1) * USERS_PAGE_SIZE, curPage * USERS_PAGE_SIZE)
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      {/* User list */}
-      <div className="lg:col-span-3 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="space-y-3">
+      <div className="relative max-w-xs">
+        <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300"><SearchIcon /></div>
+        <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+          placeholder="Search by email or username..."
+          className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl w-full focus:outline-none focus:border-[#6AA8A0]" />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-gray-100 bg-gray-50/60">
             {['User','Images','Jobs','Storage',''].map(h => (
@@ -656,9 +682,14 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
             ))}
           </tr></thead>
           <tbody>
-            {users.map(u => (
-              <tr key={u.id} className={`border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors cursor-pointer ${selected?.id === u.id ? 'bg-[#EEF7F6]' : ''}`}
-                onClick={() => openUser(u)}>
+            {pagedUsers.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-300">No users found</td></tr>
+            ) : pagedUsers.map(u => {
+              const isOpen = selected?.id === u.id
+              return (
+              <Fragment key={u.id}>
+              <tr className={`border-b border-gray-50 hover:bg-[#F4F9F9] transition-colors cursor-pointer ${isOpen ? 'bg-[#EEF7F6]' : ''}`}
+                onClick={() => toggleUser(u)}>
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-900 text-sm truncate max-w-[150px]">{u.email}</p>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -671,17 +702,14 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                 <td className="px-4 py-3 text-xs text-gray-500">{u.image_count}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{u.job_count}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{fmtBytes(u.storage_bytes)}</td>
-                <td className="px-4 py-3 text-xs text-[#6AA8A0]">View →</td>
+                <td className="px-4 py-3 text-xs text-[#6AA8A0]">{isOpen ? 'Hide ↑' : 'View ↓'}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* User detail */}
-      <div className="lg:col-span-2">
-        {loadingDetail && <div className="flex items-center gap-2 text-gray-400 py-8 px-4"><SpinIcon />Loading...</div>}
-        {!loadingDetail && selected && (
+              {isOpen && (
+                <tr>
+                  <td colSpan={5} className="p-0 bg-gray-50/60">
+                    <div className="p-4">
+        {loadingUserId === u.clerk_id && loadingDetail && <div className="flex items-center gap-2 text-gray-400 py-8 px-4"><SpinIcon />Loading...</div>}
+        {!(loadingUserId === u.clerk_id && loadingDetail) && selected && (
           <div className="space-y-3">
             {/* Info */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -851,12 +879,28 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
             </div>
           </div>
         )}
-        {!loadingDetail && !selected && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
-            <p className="text-sm text-gray-300">Select a user to view details</p>
-          </div>
-        )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs text-gray-400">Page {curPage} of {totalPages} — {filteredUsers.length} users</p>
+          <div className="flex gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage === 1}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Previous</button>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage === totalPages}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Next</button>
+          </div>
+        </div>
+      )}
 
       {/* Generic confirm modal (superadmin grant/revoke, etc.) */}
       {confirmModal && (
@@ -1720,7 +1764,7 @@ function SystemTab({ clerkId, api }: { clerkId: string; api: string }) {
 
 // ── Tab: Database ─────────────────────────────────────────────────────────────
 type DbTable = { name: string; row_count: number }
-type DbRows = { table: string; columns: string[]; rows: Record<string, unknown>[] }
+type DbRows = { table: string; columns: string[]; rows: Record<string, unknown>[]; editable: boolean }
 
 function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [tables, setTables]     = useState<DbTable[]>([])
@@ -1728,6 +1772,9 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [data, setData]         = useState<DbRows | null>(null)
   const [loadingTables, setLoadingTables] = useState(true)
   const [loadingRows, setLoadingRows]     = useState(false)
+  const [editingCell, setEditingCell] = useState<{ row: number; col: string } | null>(null)
+  const [editValue, setEditValue]     = useState('')
+  const [saving, setSaving]           = useState(false)
   const h = { 'x-clerk-id': clerkId }
 
   useEffect(() => {
@@ -1741,7 +1788,7 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
       .finally(() => setLoadingTables(false))
   }, [clerkId, api])
 
-  useEffect(() => {
+  const loadRows = useCallback(() => {
     if (!selected) return
     setLoadingRows(true)
     fetch(`${api}/superadmin/db/tables/${selected}?limit=200`, { headers: h })
@@ -1750,10 +1797,34 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
       .finally(() => setLoadingRows(false))
   }, [selected, clerkId, api])
 
+  useEffect(() => { loadRows() }, [loadRows])
+
   function cell(v: unknown): string {
     if (v === null || v === undefined) return '—'
     if (typeof v === 'object') return JSON.stringify(v)
     return String(v)
+  }
+
+  async function saveCell(rowIdx: number) {
+    if (!data || !editingCell) return
+    setSaving(true)
+    try {
+      const rowId = String(data.rows[rowIdx].id)
+      await fetch(`${api}/superadmin/db/tables/${data.table}/${rowId}`, {
+        method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [editingCell.col]: editValue }),
+      })
+      setEditingCell(null)
+      loadRows()
+    } finally { setSaving(false) }
+  }
+
+  async function deleteRow(rowIdx: number) {
+    if (!data) return
+    const rowId = String(data.rows[rowIdx].id)
+    if (!confirm(`Delete this row from "${data.table}"? This cannot be undone.`)) return
+    await fetch(`${api}/superadmin/db/tables/${data.table}/${rowId}`, { method: 'DELETE', headers: h })
+    loadRows()
   }
 
   return (
@@ -1765,7 +1836,7 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
         ) : (
           <div className="py-1">
             {tables.map(t => (
-              <button key={t.name} onClick={() => setSelected(t.name)}
+              <button key={t.name} onClick={() => { setSelected(t.name); setEditingCell(null) }}
                 className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors ${
                   selected === t.name ? 'bg-[#EEF7F6] text-[#3D7A72] font-medium' : 'text-gray-600 hover:bg-gray-50'
                 }`}>
@@ -1782,30 +1853,60 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
         {loadingRows || !data ? (
           <div className="flex items-center gap-2 text-gray-400 py-8 px-4 text-sm"><SpinIcon />Loading...</div>
         ) : (
-          <div className="overflow-auto max-h-[70vh]">
-            <table className="text-sm w-full">
-              <thead className="sticky top-0 bg-gray-50/95 backdrop-blur">
-                <tr className="border-b border-gray-100">
-                  {data.columns.map(c => (
-                    <th key={c} className="text-left px-3 py-2.5 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.length === 0 ? (
-                  <tr><td colSpan={data.columns.length} className="px-4 py-8 text-center text-sm text-gray-300">Empty table</td></tr>
-                ) : data.rows.map((row, i) => (
-                  <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+          <>
+            {!data.editable && (
+              <div className="px-4 py-2 text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
+                Read-only — this table has its own dedicated tab that handles cleanup (storage, PostGIS) safely.
+              </div>
+            )}
+            <div className="overflow-auto max-h-[70vh]">
+              <table className="text-sm w-full">
+                <thead className="sticky top-0 bg-gray-50/95 backdrop-blur">
+                  <tr className="border-b border-gray-100">
                     {data.columns.map(c => (
-                      <td key={c} className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[240px] truncate" title={cell(row[c])}>
-                        {cell(row[c])}
-                      </td>
+                      <th key={c} className="text-left px-3 py-2.5 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">
+                        {c === '_owner_email' ? 'owner email' : c}
+                      </th>
                     ))}
+                    {data.editable && <th className="px-3 py-2.5"></th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.rows.length === 0 ? (
+                    <tr><td colSpan={data.columns.length + 1} className="px-4 py-8 text-center text-sm text-gray-300">Empty table</td></tr>
+                  ) : data.rows.map((row, i) => (
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      {data.columns.map(c => {
+                        const isEditing = editingCell?.row === i && editingCell?.col === c
+                        const editableCol = data.editable && c !== 'id' && c !== '_owner_email'
+                        return (
+                          <td key={c}
+                            className={`px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[240px] ${editableCol ? 'cursor-pointer hover:bg-[#EEF7F6]' : ''} ${isEditing ? '' : 'truncate'}`}
+                            title={editableCol ? 'Click to edit' : cell(row[c])}
+                            onClick={() => { if (editableCol && !isEditing) { setEditingCell({ row: i, col: c }); setEditValue(cell(row[c]) === '—' ? '' : cell(row[c])) } }}>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1">
+                                <input autoFocus value={editValue} onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveCell(i); if (e.key === 'Escape') setEditingCell(null) }}
+                                  className="border border-[#6AA8A0] rounded px-1.5 py-0.5 text-xs w-full min-w-[120px]" />
+                                <button onClick={() => saveCell(i)} disabled={saving} className="text-[#3D7A72] flex-shrink-0"><CheckIcon /></button>
+                                <button onClick={() => setEditingCell(null)} className="text-gray-400 flex-shrink-0"><XIcon /></button>
+                              </div>
+                            ) : cell(row[c])}
+                          </td>
+                        )
+                      })}
+                      {data.editable && (
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => deleteRow(i)} className="text-gray-300 hover:text-red-500 transition-colors"><TrashIcon /></button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

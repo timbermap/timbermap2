@@ -18,6 +18,24 @@ models_router = APIRouter(prefix="/models", tags=["models"])
 GCS_BUCKET = os.getenv("GCS_BUCKET", "timbermap-data")
 CLEANUP_WORKER_URL = os.getenv("CLEANUP_WORKER_URL", "https://timbermap-cleanup-worker-tjrp7tcqaa-uc.a.run.app")
 CLEANUP_INTERNAL_SECRET = os.getenv("CLEANUP_INTERNAL_SECRET")
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
+
+
+def _delete_clerk_user(clerk_id: str) -> bool:
+    """Best-effort — deletes the user in Clerk itself, not just our DB.
+    Non-fatal on failure (already-deleted, network hiccup, etc.) so it never
+    blocks the data cleanup that already happened."""
+    if not CLERK_SECRET_KEY:
+        return False
+    try:
+        r = http_requests.delete(
+            f"https://api.clerk.com/v1/users/{clerk_id}",
+            headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"},
+            timeout=30,
+        )
+        return r.status_code in (200, 204, 404)
+    except Exception:
+        return False
 
 # Services checked by the System tab. Cloud Run URLs, not app routes — each
 # needs its own OIDC identity token now that raster/vector/cleanup are
@@ -317,12 +335,20 @@ def set_superadmin(target_clerk_id: str, req: SetSuperadminRequest, _: str = Dep
 
 @router.delete("/users/{target_clerk_id}")
 def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(require_superadmin)):
-    """Irreversibly deletes a user's account: all images, vectors, jobs, GCS
-    files and PostGIS data (via the cleanup worker), then the users row."""
+    """Irreversibly deletes a user: all images, vectors, jobs, GCS files and
+    PostGIS data (via the cleanup worker), the users row, the account row
+    too if this was its last member, and the user in Clerk itself."""
     if target_clerk_id == admin_clerk_id:
         raise HTTPException(400, "Can't delete your own account from here")
     if not database.get_user_id(target_clerk_id):
         raise HTTPException(404, "User not found")
+
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("SELECT account_id FROM users WHERE clerk_id = %s", (target_clerk_id,))
+    row = cur.fetchone()
+    account_id = row["account_id"] if row else None
+    cur.close(); conn.close()
+
     try:
         r = http_requests.delete(
             f"{CLEANUP_WORKER_URL}/user/{target_clerk_id}",
@@ -331,10 +357,24 @@ def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(requ
         r.raise_for_status()
     except Exception as e:
         raise HTTPException(500, f"Cleanup worker failed: {e}")
+
+    clerk_deleted = _delete_clerk_user(target_clerk_id)
+
     conn = database.get_conn(); cur = conn.cursor()
     cur.execute("DELETE FROM users WHERE clerk_id = %s", (target_clerk_id,))
+    account_deleted = False
+    if account_id:
+        cur.execute("SELECT 1 FROM users WHERE account_id = %s LIMIT 1", (account_id,))
+        if not cur.fetchone():
+            cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
+            account_deleted = True
     conn.commit(); cur.close(); conn.close()
-    return {"deleted": True, "clerk_id": target_clerk_id}
+
+    return {
+        "deleted": True, "clerk_id": target_clerk_id,
+        "clerk_user_deleted": clerk_deleted,
+        "account_row_deleted": account_deleted,
+    }
 
 @router.put("/users/{target_clerk_id}/plan")
 def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require_superadmin)):
@@ -745,21 +785,43 @@ def list_db_tables(_: str = Depends(require_superadmin)):
     cur.close(); conn.close()
     return {"tables": result}
 
-@router.get("/db/tables/{table_name}")
-def get_db_table_rows(table_name: str, limit: int = 200, _: str = Depends(require_superadmin)):
-    conn = database.get_conn(); cur = conn.cursor()
-    # Whitelist against the live schema — table_name is otherwise going
-    # straight into an identifier position in raw SQL below.
+# Tables whose rows resolve to a human via one of these FK columns — the
+# browser adds the resolved email as an extra column so raw UUIDs aren't
+# the only way to tell whose data a row belongs to.
+OWNER_FK_COLUMN = {
+    "images": "owner_id", "vectors": "owner_id", "jobs": "owner_id",
+    "upgrade_requests": "user_id", "user_model_permissions": "user_id",
+}
+# Tables with their own dedicated, cascade-aware admin flow elsewhere —
+# generic edit/delete here would bypass GCS/PostGIS/Clerk cleanup, so the
+# browser stays read-only for these on purpose.
+DB_BROWSER_READONLY = {"users", "accounts", "tier_limits", "user_model_permissions", "spatial_ref_sys", "images", "vectors"}
+
+def _validate_table(cur, table_name: str):
     cur.execute("""
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name = %s
     """, (table_name,))
     if not cur.fetchone():
-        cur.close(); conn.close()
         raise HTTPException(404, "No such table")
 
+@router.get("/db/tables/{table_name}")
+def get_db_table_rows(table_name: str, limit: int = 200, _: str = Depends(require_superadmin)):
+    conn = database.get_conn(); cur = conn.cursor()
+    # Whitelist against the live schema — table_name is otherwise going
+    # straight into an identifier position in raw SQL below.
+    _validate_table(cur, table_name)
+
     limit = max(1, min(limit, 1000))
-    cur.execute(f'SELECT * FROM "{table_name}" ORDER BY 1 DESC LIMIT %s', (limit,))
+    fk_col = OWNER_FK_COLUMN.get(table_name)
+    if fk_col:
+        cur.execute(
+            f'SELECT t.*, u.email AS "_owner_email" FROM "{table_name}" t '
+            f'LEFT JOIN users u ON u.id = t."{fk_col}" ORDER BY 1 DESC LIMIT %s',
+            (limit,),
+        )
+    else:
+        cur.execute(f'SELECT * FROM "{table_name}" ORDER BY 1 DESC LIMIT %s', (limit,))
     rows = cur.fetchall()
     columns = [d.name for d in cur.description]
     cur.close(); conn.close()
@@ -773,7 +835,68 @@ def get_db_table_rows(table_name: str, limit: int = 200, _: str = Depends(requir
         "table": table_name,
         "columns": columns,
         "rows": [{k: _jsonable(v) for k, v in dict(r).items()} for r in rows],
+        "editable": table_name not in DB_BROWSER_READONLY,
     }
+
+@router.put("/db/tables/{table_name}/{row_id}")
+def update_db_table_row(table_name: str, row_id: str, body: dict, _: str = Depends(require_superadmin)):
+    if table_name in DB_BROWSER_READONLY:
+        raise HTTPException(403, "This table is managed from its dedicated tab, not editable here")
+    conn = database.get_conn(); cur = conn.cursor()
+    _validate_table(cur, table_name)
+    cur.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+    """, (table_name,))
+    valid_cols = {r["column_name"] for r in cur.fetchall()}
+    updates = {k: v for k, v in body.items() if k in valid_cols and k != "id"}
+    if not updates:
+        cur.close(); conn.close()
+        raise HTTPException(400, "No editable columns in body")
+    set_clause = ", ".join(f'"{k}" = %s' for k in updates)
+    cur.execute(
+        f'UPDATE "{table_name}" SET {set_clause} WHERE id = %s RETURNING id',
+        (*updates.values(), row_id),
+    )
+    row = cur.fetchone()
+    conn.commit(); cur.close(); conn.close()
+    if not row: raise HTTPException(404, "Row not found")
+    return {"updated": True, "table": table_name, "id": row_id}
+
+@router.delete("/db/tables/{table_name}/{row_id}")
+def delete_db_table_row(table_name: str, row_id: str, _: str = Depends(require_superadmin)):
+    if table_name in DB_BROWSER_READONLY:
+        raise HTTPException(403, "This table is managed from its dedicated tab, not deletable here")
+    conn = database.get_conn(); cur = conn.cursor()
+    _validate_table(cur, table_name)
+
+    # Best-effort: cascade job_outputs when deleting a job, and clean up the
+    # row's own GCS blob if it has a gcs_path column — a raw DELETE alone
+    # would otherwise orphan the file in storage.
+    if table_name == "jobs":
+        cur.execute('SELECT gcs_path FROM job_outputs WHERE job_id = %s', (row_id,))
+        for r in cur.fetchall():
+            if r["gcs_path"]:
+                try: storage.Client().bucket(GCS_BUCKET).blob(r["gcs_path"]).delete()
+                except Exception: pass
+        cur.execute('DELETE FROM job_outputs WHERE job_id = %s', (row_id,))
+
+    cur.execute("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s AND column_name = 'gcs_path'
+    """, (table_name,))
+    if cur.fetchone():
+        cur.execute(f'SELECT gcs_path FROM "{table_name}" WHERE id = %s', (row_id,))
+        row = cur.fetchone()
+        if row and row["gcs_path"]:
+            try: storage.Client().bucket(GCS_BUCKET).blob(row["gcs_path"]).delete()
+            except Exception: pass
+
+    cur.execute(f'DELETE FROM "{table_name}" WHERE id = %s RETURNING id', (row_id,))
+    row = cur.fetchone()
+    conn.commit(); cur.close(); conn.close()
+    if not row: raise HTTPException(404, "Row not found")
+    return {"deleted": True, "table": table_name, "id": row_id}
 
 @router.get("/system")
 def get_system_info(_: str = Depends(require_superadmin)):
