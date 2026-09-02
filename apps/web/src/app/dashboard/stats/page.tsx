@@ -251,6 +251,26 @@ export default function StatsPage() {
     )
   }
 
+  if (images.length === 0 && vectors.length === 0 && jobs.length === 0) {
+    return (
+      <div className="w-full">
+        <div className="pt-1 mb-6">
+          <p className="text-xs font-medium tracking-widest uppercase mb-1" style={{ color: tealLt }}>Analytics</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Usage &amp; Statistics</h1>
+        </div>
+        <div className="bg-white rounded-2xl border-2 border-dashed px-6 py-16 text-center" style={{ borderColor: tealXlt }}>
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: tealBg }}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={teal} className="w-6 h-6">
+              <path d="M15.5 2A1.5 1.5 0 0 0 14 3.5v13a1.5 1.5 0 0 0 3 0v-13A1.5 1.5 0 0 0 15.5 2ZM9.5 6A1.5 1.5 0 0 0 8 7.5v9a1.5 1.5 0 0 0 3 0v-9A1.5 1.5 0 0 0 9.5 6ZM3.5 10A1.5 1.5 0 0 0 2 11.5v5a1.5 1.5 0 0 0 3 0v-5A1.5 1.5 0 0 0 3.5 10Z"/>
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-gray-700 mb-1">No activity yet</p>
+          <p className="text-xs text-gray-400">Upload an image or shapefile and run a model to see usage stats here.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="w-full space-y-6 pb-8">
 
