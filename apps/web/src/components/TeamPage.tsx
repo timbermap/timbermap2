@@ -1,5 +1,5 @@
 'use client'
-import { useUser, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
+import { useUser, useOrganization, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
 import { useState, useEffect, useCallback } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
@@ -19,6 +19,7 @@ const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 
 
 export default function TeamPage({ compact = false }: { compact?: boolean }) {
   const { user, isLoaded } = useUser()
+  const { organization } = useOrganization()
   const [info, setInfo]     = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState<string | null>(null)
@@ -33,6 +34,11 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   }, [user])
 
   useEffect(() => { if (isLoaded && user) load() }, [isLoaded, user, load])
+  // Clerk sets the newly created org as active on its own client-side state
+  // immediately — no navigation needed, just re-check our own DB once that
+  // happens (the webhook that syncs it usually beats this by a beat, but
+  // load() is cheap and harmless to call again if it hasn't yet).
+  useEffect(() => { if (organization && isLoaded && user) load() }, [organization, isLoaded, user, load])
 
   async function toggleModel(teammateClerkId: string, modelId: string, hasAccess: boolean) {
     const key = `${teammateClerkId}:${modelId}`
@@ -55,7 +61,7 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   // Not part of a team yet
   if (!info || !info.is_organization) {
     return (
-      <div className="max-w-lg">
+      <div className={`max-w-lg ${compact ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}>
         <h1 className="text-lg font-semibold text-[#1A2624] mb-1">Team</h1>
         <p className="text-sm text-gray-400 mb-6">You&apos;re not part of a team yet.</p>
         <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
@@ -75,7 +81,6 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
           <CreateOrganization
-            afterCreateOrganizationUrl={typeof window !== 'undefined' ? window.location.pathname : undefined}
             appearance={{
               elements: {
                 rootBox: 'w-full', card: 'shadow-none border-0 w-full p-4',
@@ -93,7 +98,7 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   // Member of a team, not an admin — read-only view
   if (info.org_role !== 'admin') {
     return (
-      <div className="max-w-lg">
+      <div className={`max-w-lg ${compact ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}>
         <h1 className="text-lg font-semibold text-[#1A2624] mb-1">Team</h1>
         <p className="text-sm text-gray-400 mb-6">You&apos;re a member of a team. Storage and processing count against your team&apos;s shared plan.</p>
         <div className="bg-white border border-gray-100 rounded-2xl p-5">
@@ -117,7 +122,7 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
 
   // Admin — full management
   return (
-    <div className="w-full">
+    <div className={`w-full ${compact ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}>
       <div className="mb-6">
         <h1 className="text-lg font-semibold text-[#1A2624] mb-1">Team</h1>
         <p className="text-sm text-gray-400">
@@ -174,10 +179,10 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
         )}
       </div>
 
-      {/* Invite / manage members — Clerk's own UI, embedded inline. In the
-          user-menu popover this is scroll-capped so it fits without ever
-          navigating away from the tab. */}
-      <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${compact ? 'max-h-[55vh] overflow-y-auto' : ''}`}>
+      {/* Invite / manage members — Clerk's own UI, embedded inline. Never a
+          link to another page — the whole tab (including this) scrolls as
+          one unit in the user-menu popover instead. */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-5 pb-0">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
         </div>
