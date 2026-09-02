@@ -194,6 +194,11 @@ export default function ModelsPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">
               <h2 className="text-sm font-semibold text-[#1C1C1C]">{model.name}</h2>
+              <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+                model.is_free ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-[#FBF6EA] text-[#96814A]'
+              }`}>
+                {model.is_free ? 'Free' : 'Pro'}
+              </span>
               <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-[#EEF7F6] text-[#3D7A72] border border-[#A0CECC]">
                 {pipelineLabel[model.pipeline_type] || model.pipeline_type}
               </span>
@@ -375,86 +380,29 @@ export default function ModelsPage() {
 
       <div className="space-y-8">
 
-        {/* ── FREE section — your enabled models, always shown first ── */}
+        {/* ── Your active models — one list, Free/Pro shown as a badge ── */}
         <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
-                Free
-              </span>
-              <span className="text-xs text-gray-400 font-medium">All plans</span>
+          {activeModels.length === 0 ? (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
+                <CatalogIcon />
+              </div>
+              <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
+              <p className="text-gray-400 text-xs mb-5">
+                To get started, enable a model from the catalog.
+              </p>
+              <a href="/dashboard/catalog"
+                className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
+                <CatalogIcon />
+                Go to catalog →
+              </a>
             </div>
-            <div className="flex-1 h-px bg-gray-100"/>
-          </div>
-
-          {freeModels.length === 0 ? (
-            activeModels.length > 0 ? (
-              // No free models, but the user has active Pro models below —
-              // keep this quiet instead of implying nothing works at all.
-              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-5 py-5 text-center">
-                <p className="text-gray-400 text-sm">No free models enabled.</p>
-                <p className="text-gray-300 text-xs mt-1">
-                  Enable one from the{' '}
-                  <a href="/dashboard/catalog" className="text-[#3D7A72] hover:underline font-medium cursor-pointer">catalog</a>
-                  , or use your Pro models below.
-                </p>
-              </div>
-            ) : (
-              // Genuinely nothing enabled anywhere — main CTA
-              <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
-                  <CatalogIcon />
-                </div>
-                <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
-                <p className="text-gray-400 text-xs mb-5">
-                  To get started, enable free models from the catalog.
-                </p>
-                <a href="/dashboard/catalog"
-                  className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
-                  <CatalogIcon />
-                  Go to catalog →
-                </a>
-              </div>
-            )
           ) : (
             <div className="space-y-3">
-              {freeModels.map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
+              {[...freeModels, ...proModels].map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
             </div>
           )}
         </div>
-
-        {/* ── PRO section — de-emphasized, below your own models ── */}
-        {(proModels.length > 0 || isPro) && (
-          <div>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
-                  Pro
-                </span>
-                <span className="text-xs text-gray-400 font-medium">Advanced models</span>
-              </div>
-              <div className="flex-1 h-px bg-gray-100"/>
-            </div>
-
-            {proModels.length === 0 ? (
-              // Pro user but all pro models hidden
-              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-                <p className="text-gray-400 text-sm">All pro models are hidden.</p>
-                <p className="text-gray-300 text-xs mt-1">
-                  Go to{' '}
-                  <a href="/dashboard/catalog" className="text-[#3D7A72] hover:underline font-medium cursor-pointer">catalog</a>
-                  {' '}to make them visible.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {proModels.map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── Upsell strip — free users only, low-key, not a big centered box ── */}
         {!isPro && (
