@@ -389,21 +389,34 @@ export default function ModelsPage() {
           </div>
 
           {freeModels.length === 0 ? (
-            // No free models enabled — main CTA
-            <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
-                <CatalogIcon />
+            activeModels.length > 0 ? (
+              // No free models, but the user has active Pro models below —
+              // keep this quiet instead of implying nothing works at all.
+              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-5 py-5 text-center">
+                <p className="text-gray-400 text-sm">No free models enabled.</p>
+                <p className="text-gray-300 text-xs mt-1">
+                  Enable one from the{' '}
+                  <a href="/dashboard/catalog" className="text-[#3D7A72] hover:underline font-medium cursor-pointer">catalog</a>
+                  , or use your Pro models below.
+                </p>
               </div>
-              <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
-              <p className="text-gray-400 text-xs mb-5">
-                To get started, enable free models from the catalog.
-              </p>
-              <a href="/dashboard/catalog"
-                className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
-                <CatalogIcon />
-                Go to catalog →
-              </a>
-            </div>
+            ) : (
+              // Genuinely nothing enabled anywhere — main CTA
+              <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
+                  <CatalogIcon />
+                </div>
+                <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
+                <p className="text-gray-400 text-xs mb-5">
+                  To get started, enable free models from the catalog.
+                </p>
+                <a href="/dashboard/catalog"
+                  className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
+                  <CatalogIcon />
+                  Go to catalog →
+                </a>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               {freeModels.map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
