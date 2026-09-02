@@ -1,7 +1,8 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
-import React from 'react'
+import React, { Suspense } from 'react'
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import maplibregl, { StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
@@ -334,7 +335,20 @@ function LayerRow({ layer, colorDot, onToggle, onZoomTo, onOpacityChange, isVect
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MapPage() {
+  return (
+    <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center" style={{ background: '#111827' }} />}>
+      <MapPageInner />
+    </Suspense>
+  )
+}
+
+function MapPageInner() {
   const { user, isLoaded } = useUser()
+  const searchParams = useSearchParams()
+  const viewAsParam  = searchParams.get('viewAs')
+  const focusParam   = searchParams.get('focus')
+  const [viewingAsAdmin, setViewingAsAdmin] = useState(false)
+  const focusedRef = useRef(false)
   const mapContainer = useRef<HTMLDivElement>(null)
   const map          = useRef<maplibregl.Map | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -360,6 +374,19 @@ export default function MapPage() {
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
+  // ?viewAs=<clerk_id> lets superadmin open another user's map (used by the
+  // superadmin panel's "View on map" action) — verify the caller is actually
+  // superadmin before trusting it.
+  useEffect(() => {
+    if (!viewAsParam || !user) return
+    fetch(`${API}/superadmin/am-i-admin`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.json())
+      .then(d => setViewingAsAdmin(!!d.is_superadmin))
+      .catch(() => setViewingAsAdmin(false))
+  }, [viewAsParam, user, API])
+
+  const effectiveClerkId = (viewAsParam && viewingAsAdmin) ? viewAsParam : user?.id
+
   useEffect(() => {
     setClientReady(true)
     setLayersLoading(true)
@@ -379,9 +406,10 @@ export default function MapPage() {
   }, [])
 
   const fetchLayers = useCallback(async (retrying = false) => {
-    if (!isLoaded || !user) return
+    if (!isLoaded || !user || !effectiveClerkId) return
+    if (viewAsParam && !viewingAsAdmin) return
     try {
-      const res = await fetch(`${API}/layers/${user.id}`)
+      const res = await fetch(`${API}/layers/${effectiveClerkId}`)
       if (!res.ok) {
         if ((res.status === 401 || res.status === 403) && !retrying) { window.location.reload(); return }
         throw new Error(`HTTP ${res.status}`)
@@ -399,7 +427,7 @@ export default function MapPage() {
       })
     } catch { setFetchErr(true) }
     finally { setLayersLoading(false) }
-  }, [user, isLoaded, API])
+  }, [user, isLoaded, API, effectiveClerkId, viewAsParam, viewingAsAdmin])
 
   useEffect(() => { if (isLoaded && user) fetchLayers() }, [user, isLoaded, fetchLayers])
 
@@ -550,6 +578,16 @@ export default function MapPage() {
       }
     })
   }, [layers, mapReady, mlOutputs])
+
+  // ?focus=<layer_id> — auto-zoom once to the layer the superadmin panel
+  // linked to (only once, so panning afterward isn't fought).
+  useEffect(() => {
+    if (!focusParam || !mapReady || focusedRef.current) return
+    const target = layers.find(l => l.id === focusParam)
+    if (!target) return
+    zoomToLayer(target)
+    focusedRef.current = true
+  }, [focusParam, layers, mapReady])
 
   // Render ML output layers
   useEffect(() => {
@@ -1000,6 +1038,13 @@ export default function MapPage() {
               <div className="w-8 h-8 border-2 animate-spin" style={{ borderRadius: 99, borderColor: '#374151', borderTopColor: '#6AA8A0' }} />
               <p className="text-xs text-white/30 tracking-widest uppercase">Loading map</p>
             </div>
+          </div>
+        )}
+
+        {/* Superadmin viewing another user's data via ?viewAs= */}
+        {viewAsParam && viewingAsAdmin && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#3D7A72] text-white text-xs px-3 py-1.5 rounded-full shadow-lg z-10">
+            Viewing as {viewAsParam} (superadmin)
           </div>
         )}
 

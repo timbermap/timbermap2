@@ -100,12 +100,13 @@ type UpgradeRequest = {
 }
 type AdminImage = {
   id: string; filename: string; status: string; created_at: string
-  email: string; username: string; gcs_path: string
+  email: string; username: string; gcs_path: string; clerk_id: string
   area_ha: number | null; epsg: string | null; file_size_bytes: number | null
+  bbox_minx: number | null; bbox_miny: number | null; bbox_maxx: number | null; bbox_maxy: number | null
 }
 type AdminVector = {
   id: string; filename: string; status: string; created_at: string
-  email: string; username: string; gcs_path: string
+  email: string; username: string; gcs_path: string; clerk_id: string
   epsg: string | null; file_size_bytes: number | null
 }
 
@@ -127,6 +128,18 @@ const SpinIcon    = () => <svg className="animate-spin w-3.5 h-3.5" xmlns="http:
 const XIcon       = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
 
 const RetryIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clipRule="evenodd"/></svg>
+const MapPinIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
+const ReprojIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
+const SearchIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd"/></svg>
+type SortDir = 'asc' | 'desc'
+const SortIcon = ({ dir }: { dir?: SortDir }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline ml-1">
+    {dir === 'asc'  ? <path fillRule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.29 9.77a.75.75 0 0 1-1.08-1.04l5.25-5.5a.75.75 0 0 1 1.08 0l5.25 5.5a.75.75 0 1 1-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0 1 10 17Z" clipRule="evenodd"/> :
+     dir === 'desc' ? <path fillRule="evenodd" d="M10 3a.75.75 0 0 1 .75.75v10.638l3.96-4.158a.75.75 0 1 1 1.08 1.04l-5.25 5.5a.75.75 0 0 1-1.08 0l-5.25-5.5a.75.75 0 1 1 1.08-1.04l3.96 4.158V3.75A.75.75 0 0 1 10 3Z" clipRule="evenodd"/> :
+     <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 0 0 1.06-.04l1.95-2.1v8.59a.75.75 0 0 0 1.5 0V4.66l1.95 2.1a.75.75 0 1 0 1.1-1.02L6.53 2.24a.75.75 0 0 0-1.1 0L2.2 5.74a.75.75 0 0 0 .04 1.06Zm8 6.4a.75.75 0 0 0-.04 1.06l3.25 3.5a.75.75 0 0 0 1.1 0l3.25-3.5a.75.75 0 1 0-1.1-1.02l-1.95 2.1V7.75a.75.75 0 0 0-1.5 0v8.59l-1.95-2.1a.75.75 0 0 0-1.06-.04Z" clipRule="evenodd"/>}
+  </svg>
+)
+const ADMIN_PAGE_SIZE = 15
 const ImagesIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd"/></svg>
 const VectorsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M4.75 3a.75.75 0 0 0 0 1.5h.75v.75a.75.75 0 0 0 1.5 0V4.5h.75a.75.75 0 0 0 0-1.5h-3ZM13.25 3a.75.75 0 0 0 0 1.5H14v.75a.75.75 0 0 0 1.5 0V4.5h.75a.75.75 0 0 0 0-1.5h-3ZM4.75 14a.75.75 0 0 0 0 1.5h.75v.75a.75.75 0 0 0 1.5 0V15.5h.75a.75.75 0 0 0 0-1.5h-3ZM13.25 14a.75.75 0 0 0 0 1.5H14v.75a.75.75 0 0 0 1.5 0V15.5h.75a.75.75 0 0 0 0-1.5h-3ZM7 9.25A2.25 2.25 0 0 1 9.25 7h1.5A2.25 2.25 0 0 1 13 9.25v1.5A2.25 2.25 0 0 1 10.75 13h-1.5A2.25 2.25 0 0 1 7 10.75v-1.5Z"/></svg>
 function fmtBytes(b: number) {
@@ -923,11 +936,20 @@ function AdminJobsTab({ clerkId, api }: { clerkId: string; api: string }) {
 }
 
 // ── Tab: All Images ───────────────────────────────────────────────────────────
+type ImageSortKey = 'filename' | 'email' | 'file_size_bytes' | 'area_ha' | 'epsg' | 'status' | 'created_at'
+
 function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [images, setImages]     = useState<AdminImage[]>([])
   const [loading, setLoading]   = useState(true)
   const [acting, setActing]     = useState<string | null>(null)
   const [filter, setFilter]     = useState('')
+  const [search, setSearch]     = useState('')
+  const [sortKey, setSortKey]   = useState<ImageSortKey>('created_at')
+  const [sortDir, setSortDir]   = useState<SortDir>('desc')
+  const [page, setPage]         = useState(1)
+  const [transformTarget, setTransformTarget] = useState<AdminImage | null>(null)
+  const [transformForm, setTransformForm] = useState({ new_epsg: '', new_resolution_x: '' })
+  const [transforming, setTransforming] = useState(false)
   const h = { 'x-clerk-id': clerkId }
 
   const fetchImages = useCallback(() => {
@@ -951,19 +973,79 @@ function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
     fetchImages(); setActing(null)
   }
 
-  const filtered = filter ? images.filter(i => i.status === filter) : images
+  function handleViewOnMap(img: AdminImage) {
+    window.open(`/dashboard/map?viewAs=${img.clerk_id}&focus=${img.id}`, '_blank')
+  }
+
+  async function handleTransformSubmit() {
+    if (!transformTarget) return
+    setTransforming(true)
+    try {
+      await fetch(`${api}/superadmin/images/${transformTarget.id}/transform`, {
+        method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_epsg: transformForm.new_epsg || null,
+          new_resolution_x: transformForm.new_resolution_x ? parseFloat(transformForm.new_resolution_x) : null,
+        }),
+      })
+      setTransformTarget(null)
+      setTransformForm({ new_epsg: '', new_resolution_x: '' })
+      fetchImages()
+    } finally { setTransforming(false) }
+  }
+
+  function toggleSort(key: ImageSortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+    setPage(1)
+  }
+
+  const q = search.trim().toLowerCase()
+  const searched = q
+    ? images.filter(i => i.filename.toLowerCase().includes(q) || i.email.toLowerCase().includes(q) || i.username?.toLowerCase().includes(q))
+    : images
+  const filtered = filter ? searched.filter(i => i.status === filter) : searched
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string | number = a[sortKey] ?? ''
+    let bv: string | number = b[sortKey] ?? ''
+    if (typeof av === 'string') av = av.toLowerCase()
+    if (typeof bv === 'string') bv = bv.toLowerCase()
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+  const totalPages = Math.max(1, Math.ceil(sorted.length / ADMIN_PAGE_SIZE))
+  const curPage = Math.min(page, totalPages)
+  const paged = sorted.slice((curPage - 1) * ADMIN_PAGE_SIZE, curPage * ADMIN_PAGE_SIZE)
+
+  const columns: { key: ImageSortKey | null; label: string }[] = [
+    { key: 'email',           label: 'User' },
+    { key: 'filename',        label: 'Filename' },
+    { key: 'file_size_bytes', label: 'Size' },
+    { key: 'area_ha',         label: 'Area (ha)' },
+    { key: 'epsg',            label: 'EPSG' },
+    { key: 'status',          label: 'Status' },
+    { key: 'created_at',      label: 'Created' },
+    { key: null,              label: 'Actions' },
+  ]
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         {['', 'ready', 'processing', 'failed'].map(s => (
-          <button key={s} onClick={() => setFilter(s)}
+          <button key={s} onClick={() => { setFilter(s); setPage(1) }}
             className={`text-xs px-3 py-1.5 rounded-xl font-medium border transition-colors ${
               filter === s ? 'bg-[#3D7A72] text-white border-[#3D7A72]' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
             }`}>
             {s || 'All'}
           </button>
         ))}
+        <div className="relative">
+          <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300"><SearchIcon /></div>
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            placeholder="Search filename or user..."
+            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-xl w-56 focus:outline-none focus:border-[#6AA8A0]" />
+        </div>
         <button onClick={() => { setLoading(true); fetchImages() }} className="ml-auto text-xs text-[#6AA8A0] hover:text-[#3D7A72]">Refresh</button>
       </div>
 
@@ -974,14 +1056,19 @@ function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-100 bg-gray-50/60">
-                {['User','Filename','Size','Area (ha)','EPSG','Status','Created','Actions'].map(col => (
-                  <th key={col} className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{col}</th>
+                {columns.map(col => (
+                  <th key={col.label}
+                    className={`text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap ${col.key ? 'cursor-pointer hover:text-gray-600 select-none' : 'cursor-default'}`}
+                    onClick={() => col.key && toggleSort(col.key)}>
+                    {col.label}
+                    {col.key && <SortIcon dir={sortKey === col.key ? sortDir : undefined} />}
+                  </th>
                 ))}
               </tr></thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {paged.length === 0 ? (
                   <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-300">No images found</td></tr>
-                ) : filtered.map(img => (
+                ) : paged.map(img => (
                   <tr key={img.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate">{img.email}</td>
                     <td className="px-4 py-3 text-xs text-gray-700 font-medium max-w-[160px] truncate">{img.filename}</td>
@@ -994,6 +1081,18 @@ function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
                     <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(img.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
+                        {img.status === 'ready' && (
+                          <button onClick={() => handleViewOnMap(img)} title="View on map"
+                            className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                            <MapPinIcon />
+                          </button>
+                        )}
+                        {img.status === 'ready' && (
+                          <button onClick={() => setTransformTarget(img)} title="Transform"
+                            className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                            <ReprojIcon />
+                          </button>
+                        )}
                         {(img.status === 'failed' || img.status === 'processing') && (
                           <button onClick={() => handleReprocess(img.id)} disabled={acting === img.id}
                             className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors disabled:opacity-50">
@@ -1011,6 +1110,44 @@ function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-50">
+              <p className="text-xs text-gray-400">Page {curPage} of {totalPages} — {sorted.length} images</p>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage === 1}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Previous</button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage === totalPages}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {transformTarget && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
+            <h2 className="text-base font-semibold text-[#1C1C1C] mb-0.5">Transform image</h2>
+            <p className="text-sm text-gray-400 mb-5 truncate">{transformTarget.filename} — {transformTarget.email}</p>
+            <label className="block text-xs font-medium text-gray-500 mb-1">New EPSG (optional)</label>
+            <input value={transformForm.new_epsg} onChange={e => setTransformForm(f => ({ ...f, new_epsg: e.target.value }))}
+              placeholder={transformTarget.epsg || 'e.g. 32721'}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4 focus:outline-none focus:border-[#6AA8A0]" />
+            <label className="block text-xs font-medium text-gray-500 mb-1">New resolution, meters (optional)</label>
+            <input value={transformForm.new_resolution_x} onChange={e => setTransformForm(f => ({ ...f, new_resolution_x: e.target.value }))}
+              placeholder="e.g. 0.1" type="number" step="any"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:border-[#6AA8A0]" />
+            <div className="flex gap-3">
+              <button onClick={() => setTransformTarget(null)} disabled={transforming}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleTransformSubmit} disabled={transforming || (!transformForm.new_epsg && !transformForm.new_resolution_x)}
+                className="flex-1 px-4 py-2.5 bg-[#3D7A72] text-white rounded-xl text-sm hover:bg-[#2A5750] transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                {transforming ? <><SpinIcon />Starting...</> : 'Transform'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1018,11 +1155,20 @@ function AllImagesTab({ clerkId, api }: { clerkId: string; api: string }) {
 }
 
 // ── Tab: All Vectors ──────────────────────────────────────────────────────────
+type VectorSortKey = 'filename' | 'email' | 'file_size_bytes' | 'epsg' | 'status' | 'created_at'
+
 function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [vectors, setVectors]   = useState<AdminVector[]>([])
   const [loading, setLoading]   = useState(true)
   const [acting, setActing]     = useState<string | null>(null)
   const [filter, setFilter]     = useState('')
+  const [search, setSearch]     = useState('')
+  const [sortKey, setSortKey]   = useState<VectorSortKey>('created_at')
+  const [sortDir, setSortDir]   = useState<SortDir>('desc')
+  const [page, setPage]         = useState(1)
+  const [transformTarget, setTransformTarget] = useState<AdminVector | null>(null)
+  const [transformEpsg, setTransformEpsg] = useState('')
+  const [transforming, setTransforming] = useState(false)
   const h = { 'x-clerk-id': clerkId }
 
   const fetchVectors = useCallback(() => {
@@ -1046,19 +1192,74 @@ function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
     fetchVectors(); setActing(null)
   }
 
-  const filtered = filter ? vectors.filter(v => v.status === filter) : vectors
+  function handleViewOnMap(vec: AdminVector) {
+    window.open(`/dashboard/map?viewAs=${vec.clerk_id}&focus=${vec.id}`, '_blank')
+  }
+
+  async function handleTransformSubmit() {
+    if (!transformTarget || !transformEpsg) return
+    setTransforming(true)
+    try {
+      await fetch(`${api}/superadmin/vectors/${transformTarget.id}/transform`, {
+        method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_epsg: transformEpsg }),
+      })
+      setTransformTarget(null); setTransformEpsg('')
+      fetchVectors()
+    } finally { setTransforming(false) }
+  }
+
+  function toggleSort(key: VectorSortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+    setPage(1)
+  }
+
+  const q = search.trim().toLowerCase()
+  const searched = q
+    ? vectors.filter(v => v.filename.toLowerCase().includes(q) || v.email.toLowerCase().includes(q) || v.username?.toLowerCase().includes(q))
+    : vectors
+  const filtered = filter ? searched.filter(v => v.status === filter) : searched
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string | number = a[sortKey] ?? ''
+    let bv: string | number = b[sortKey] ?? ''
+    if (typeof av === 'string') av = av.toLowerCase()
+    if (typeof bv === 'string') bv = bv.toLowerCase()
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+  const totalPages = Math.max(1, Math.ceil(sorted.length / ADMIN_PAGE_SIZE))
+  const curPage = Math.min(page, totalPages)
+  const paged = sorted.slice((curPage - 1) * ADMIN_PAGE_SIZE, curPage * ADMIN_PAGE_SIZE)
+
+  const columns: { key: VectorSortKey | null; label: string }[] = [
+    { key: 'email',           label: 'User' },
+    { key: 'filename',        label: 'Filename' },
+    { key: 'file_size_bytes', label: 'Size' },
+    { key: 'epsg',            label: 'EPSG' },
+    { key: 'status',          label: 'Status' },
+    { key: 'created_at',      label: 'Created' },
+    { key: null,              label: 'Actions' },
+  ]
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         {['', 'ready', 'processing', 'failed'].map(s => (
-          <button key={s} onClick={() => setFilter(s)}
+          <button key={s} onClick={() => { setFilter(s); setPage(1) }}
             className={`text-xs px-3 py-1.5 rounded-xl font-medium border transition-colors ${
               filter === s ? 'bg-[#3D7A72] text-white border-[#3D7A72]' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
             }`}>
             {s || 'All'}
           </button>
         ))}
+        <div className="relative">
+          <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300"><SearchIcon /></div>
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            placeholder="Search filename or user..."
+            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-xl w-56 focus:outline-none focus:border-[#6AA8A0]" />
+        </div>
         <button onClick={() => { setLoading(true); fetchVectors() }} className="ml-auto text-xs text-[#6AA8A0] hover:text-[#3D7A72]">Refresh</button>
       </div>
 
@@ -1069,14 +1270,19 @@ function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-100 bg-gray-50/60">
-                {['User','Filename','Size','EPSG','Status','Created','Actions'].map(col => (
-                  <th key={col} className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap">{col}</th>
+                {columns.map(col => (
+                  <th key={col.label}
+                    className={`text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 whitespace-nowrap ${col.key ? 'cursor-pointer hover:text-gray-600 select-none' : 'cursor-default'}`}
+                    onClick={() => col.key && toggleSort(col.key)}>
+                    {col.label}
+                    {col.key && <SortIcon dir={sortKey === col.key ? sortDir : undefined} />}
+                  </th>
                 ))}
               </tr></thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {paged.length === 0 ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-300">No vectors found</td></tr>
-                ) : filtered.map(vec => (
+                ) : paged.map(vec => (
                   <tr key={vec.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-3 text-xs text-gray-600 max-w-[120px] truncate">{vec.email}</td>
                     <td className="px-4 py-3 text-xs text-gray-700 font-medium max-w-[160px] truncate">{vec.filename}</td>
@@ -1088,6 +1294,18 @@ function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
                     <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(vec.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
+                        {vec.status === 'ready' && (
+                          <button onClick={() => handleViewOnMap(vec)} title="View on map"
+                            className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                            <MapPinIcon />
+                          </button>
+                        )}
+                        {vec.status === 'ready' && (
+                          <button onClick={() => setTransformTarget(vec)} title="Transform"
+                            className="p-1.5 text-gray-400 hover:text-[#3D7A72] hover:bg-[#EEF7F6] rounded-lg transition-colors">
+                            <ReprojIcon />
+                          </button>
+                        )}
                         {(vec.status === 'failed' || vec.status === 'processing') && (
                           <button onClick={() => handleReprocess(vec.id)} disabled={acting === vec.id}
                             className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-blue-500 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors disabled:opacity-50">
@@ -1104,6 +1322,40 @@ function AllVectorsTab({ clerkId, api }: { clerkId: string; api: string }) {
                 ))}
               </tbody>
             </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-50">
+              <p className="text-xs text-gray-400">Page {curPage} of {totalPages} — {sorted.length} vectors</p>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage === 1}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Previous</button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage === totalPages}
+                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:hover:border-gray-200">Next</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {transformTarget && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100">
+            <h2 className="text-base font-semibold text-[#1C1C1C] mb-0.5">Transform vector</h2>
+            <p className="text-sm text-gray-400 mb-5 truncate">{transformTarget.filename} — {transformTarget.email}</p>
+            <label className="block text-xs font-medium text-gray-500 mb-1">New EPSG</label>
+            <input value={transformEpsg} onChange={e => setTransformEpsg(e.target.value)}
+              placeholder={transformTarget.epsg || 'e.g. 32721'}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:border-[#6AA8A0]" />
+            <div className="flex gap-3">
+              <button onClick={() => { setTransformTarget(null); setTransformEpsg('') }} disabled={transforming}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleTransformSubmit} disabled={transforming || !transformEpsg}
+                className="flex-1 px-4 py-2.5 bg-[#3D7A72] text-white rounded-xl text-sm hover:bg-[#2A5750] transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                {transforming ? <><SpinIcon />Starting...</> : 'Transform'}
+              </button>
+            </div>
           </div>
         </div>
       )}

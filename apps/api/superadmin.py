@@ -508,7 +508,8 @@ def list_all_images(limit: int = 200, _: str = Depends(require_superadmin)):
     cur.execute("""
         SELECT i.id, i.filename, i.status, i.created_at, i.gcs_path,
                i.area_ha, i.epsg, i.filesize AS file_size_bytes,
-               u.email, u.username
+               i.bbox_minx, i.bbox_miny, i.bbox_maxx, i.bbox_maxy,
+               u.email, u.username, u.clerk_id
         FROM images i
         JOIN users u ON u.id = i.owner_id
         ORDER BY i.created_at DESC LIMIT %s
@@ -565,6 +566,73 @@ def admin_reprocess_image(image_id: str, _: str = Depends(require_superadmin)):
     return {"reprocessing": True, "image_id": image_id, "job_id": job_id}
 
 
+class AdminTransformRequest(BaseModel):
+    new_epsg: Optional[str] = None
+    new_resolution_x: Optional[float] = None
+    new_resolution_y: Optional[float] = None
+
+@router.post("/images/{image_id}/transform")
+def admin_transform_image(image_id: str, req: AdminTransformRequest, _: str = Depends(require_superadmin)):
+    """Same logic as the self-service /images/transform, scoped by image_id
+    directly instead of requiring the owner's clerk_id."""
+    from tasks import enqueue_raster_transform
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("""
+        SELECT i.epsg, i.bbox_minx, i.bbox_miny, i.bbox_maxx, i.bbox_maxy, u.clerk_id
+        FROM images i JOIN users u ON u.id = i.owner_id WHERE i.id = %s
+    """, (image_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Image not found")
+    res_m = req.new_resolution_x or req.new_resolution_y or None
+    if not (req.new_epsg or res_m):
+        cur.close(); conn.close()
+        raise HTTPException(400, "Nothing to transform — provide new_epsg and/or a resolution")
+    target_epsg = req.new_epsg
+    if not target_epsg:
+        current_epsg = row["epsg"]
+        if res_m and current_epsg in ("4326", "4269", "4258", "4230"):
+            minx, maxx, miny, maxy = row["bbox_minx"], row["bbox_maxx"], row["bbox_miny"], row["bbox_maxy"]
+            if minx is not None and miny is not None:
+                lon, lat = (minx + maxx) / 2, (miny + maxy) / 2
+                zone = int((lon + 180) / 6) + 1
+                target_epsg = str(32600 + zone if lat >= 0 else 32700 + zone)
+            else:
+                target_epsg = current_epsg
+        else:
+            target_epsg = current_epsg
+    cur.execute("""
+        INSERT INTO jobs (owner_id, type, status, params, input_image_id)
+        SELECT owner_id, 'raster_transform', 'queued', %s, %s FROM images WHERE id = %s
+        RETURNING id
+    """, (json.dumps({"image_id": image_id, "new_epsg": req.new_epsg, "new_resolution_x": req.new_resolution_x, "new_resolution_y": req.new_resolution_y}), image_id, image_id))
+    job_id = str(cur.fetchone()["id"])
+    conn.commit(); cur.close(); conn.close()
+    enqueue_raster_transform(job_id, image_id, target_epsg, res_m, row["clerk_id"])
+    return {"job_id": job_id, "status": "queued", "target_epsg": target_epsg}
+
+@router.post("/vectors/{vector_id}/transform")
+def admin_transform_vector(vector_id: str, req: AdminTransformRequest, _: str = Depends(require_superadmin)):
+    from tasks import enqueue_vector_transform
+    if not req.new_epsg:
+        raise HTTPException(400, "new_epsg is required")
+    conn = database.get_conn(); cur = conn.cursor()
+    cur.execute("SELECT owner_id FROM vectors WHERE id = %s", (vector_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Vector not found")
+    cur.execute("""
+        INSERT INTO jobs (owner_id, type, status, params, input_vector_id)
+        VALUES (%s, 'vector_transform', 'queued', %s, %s) RETURNING id
+    """, (row["owner_id"], json.dumps({"vector_id": vector_id, "new_epsg": req.new_epsg}), vector_id))
+    job_id = str(cur.fetchone()["id"])
+    conn.commit(); cur.close(); conn.close()
+    enqueue_vector_transform(job_id, vector_id, req.new_epsg)
+    return {"job_id": job_id, "status": "queued"}
+
+
 @router.post("/images/{image_id}/reset-status")
 def admin_reset_image_status(image_id: str, _: str = Depends(require_superadmin)):
     """Reset a stuck/failed image back to ready."""
@@ -581,7 +649,7 @@ def list_all_vectors(limit: int = 200, _: str = Depends(require_superadmin)):
     cur.execute("""
         SELECT v.id, v.filename, v.status, v.created_at, v.gcs_path,
                v.epsg, v.filesize AS file_size_bytes,
-               u.email, u.username
+               u.email, u.username, u.clerk_id
         FROM vectors v
         JOIN users u ON u.id = v.owner_id
         ORDER BY v.created_at DESC LIMIT %s
