@@ -200,6 +200,12 @@ export default function ImagesPage() {
     })
   }, [images, user, API])
 
+  const ERROR_AUTO_DISMISS_MS = 12000
+
+  function dismissUpload(uid: string) {
+    setUploads(prev => prev.filter(u => u.uid !== uid))
+  }
+
   async function uploadSingle(item: UploadItem) {
     if (!user) return
     const upd = (p: Partial<UploadItem>) =>
@@ -240,6 +246,7 @@ export default function ImagesPage() {
       setTimeout(() => setUploads(prev => prev.filter(u => u.uid !== item.uid)), 2000)
     } catch (err) {
       upd({ status: 'error', message: 'Failed: ' + String(err) })
+      setTimeout(() => dismissUpload(item.uid), ERROR_AUTO_DISMISS_MS)
     }
   }
 
@@ -259,6 +266,7 @@ export default function ImagesPage() {
       const check = await checkRasterCapacity(item.file)
       if (!check.ok) {
         setUploads(prev => prev.map(u => u.uid === item.uid ? { ...u, status: 'error', message: check.message! } : u))
+        setTimeout(() => dismissUpload(item.uid), ERROR_AUTO_DISMISS_MS)
         continue
       }
       queue.push(item)
@@ -504,6 +512,14 @@ export default function ImagesPage() {
                 }`}>
                   {u.status === 'uploading' ? `${u.progress}%` : u.message}
                 </span>
+                {(u.status === 'done' || u.status === 'error') && (
+                  <button onClick={() => dismissUpload(u.uid)} title="Dismiss"
+                    className="text-gray-300 hover:text-gray-500 flex-shrink-0 transition-colors cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                    </svg>
+                  </button>
+                )}
               </div>
               {/* Progress bar */}
               <div className="w-full bg-gray-100 rounded-full h-1.5">
