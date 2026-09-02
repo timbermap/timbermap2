@@ -349,6 +349,7 @@ function MapPageInner() {
   const focusParam   = searchParams.get('focus')
   const [viewingAsAdmin, setViewingAsAdmin] = useState(false)
   const focusedRef = useRef(false)
+  const initialFitRef = useRef(false)
   const mapContainer = useRef<HTMLDivElement>(null)
   const map          = useRef<maplibregl.Map | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -450,7 +451,25 @@ function MapPageInner() {
     if (parts.length !== 4 || parts.some(isNaN)) return
     const [minx, miny, maxx, maxy] = parts
     map.current.fitBounds([[minx, miny], [maxx, maxy]], { padding: 80, duration: 900, maxZoom: 18 })
+    initialFitRef.current = true
   }, [mapReady])
+
+  // No explicit ?bbox=/?focus= target: once layers finish loading, fit the
+  // view to every visible layer so nothing is left off-screen out of view.
+  useEffect(() => {
+    if (!mapReady || !map.current || layersLoading || initialFitRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('bbox') || params.get('focus')) { initialFitRef.current = true; return }
+    const boxes = layers.filter(l => l.visible !== false && l.bbox).map(l => l.bbox as [number, number, number, number])
+    if (boxes.length === 0) return
+    initialFitRef.current = true
+    const [minx, miny, maxx, maxy] = boxes.reduce(
+      ([aminx, aminy, amaxx, amaxy], [bminx, bminy, bmaxx, bmaxy]) =>
+        [Math.min(aminx, bminx), Math.min(aminy, bminy), Math.max(amaxx, bmaxx), Math.max(amaxy, bmaxy)],
+      boxes[0]
+    )
+    map.current.fitBounds([[minx, miny], [maxx, maxy]], { padding: 80, duration: 900, maxZoom: 18 })
+  }, [layers, mapReady, layersLoading])
 
   // Init map
   useEffect(() => {
