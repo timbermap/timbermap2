@@ -355,6 +355,8 @@ export default function MapPage() {
   const [aoiSaved,    setAoiSaved]    = useState(false)
   const [layerColors, setLayerColors] = useState<Record<string, string>>({})
   const [featurePanel, setFeaturePanel] = useState<{ layerName: string; props: Record<string, unknown> } | null>(null)
+  const [loadingRasterSources, setLoadingRasterSources] = useState<Set<string>>(new Set())
+  const rasterSourceIds = useRef<Set<string>>(new Set())
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
@@ -485,6 +487,22 @@ export default function MapPage() {
     })
 
     map.current.on('load', () => setMapReady(true))
+
+    // Track raster COG sources actively fetching/decoding tiles, so we can
+    // show a spinner — large images can take a few seconds to render via
+    // client-side range requests, and with no feedback it looks broken.
+    map.current.on('sourcedataloading', (e: { sourceId?: string }) => {
+      if (!e.sourceId || !rasterSourceIds.current.has(e.sourceId)) return
+      setLoadingRasterSources(prev => prev.has(e.sourceId!) ? prev : new Set(prev).add(e.sourceId!))
+    })
+    map.current.on('sourcedata', (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
+      if (!e.sourceId || !rasterSourceIds.current.has(e.sourceId) || !e.isSourceLoaded) return
+      setLoadingRasterSources(prev => {
+        if (!prev.has(e.sourceId!)) return prev
+        const next = new Set(prev); next.delete(e.sourceId!); return next
+      })
+    })
+
     return () => {
       maplibregl.removeProtocol('cog')
       map.current?.remove()
@@ -505,6 +523,7 @@ export default function MapPage() {
       const visibility = layer.visible ? 'visible' : 'none'
       if (layer.type === 'raster' && layer.cog_url) {
         if (!map.current!.getSource(sourceId)) {
+          rasterSourceIds.current.add(sourceId)
           map.current!.addSource(sourceId, { type: 'raster', url: `cog://${layer.cog_url}`, tileSize: 256 })
           map.current!.addLayer({ id: layerId, type: 'raster', source: sourceId,
             paint: { 'raster-opacity': layer.opacity }, layout: { visibility } }, beforeId)
@@ -543,6 +562,7 @@ export default function MapPage() {
 
       if (output.type === 'raster' && output.cog_url) {
         if (!map.current!.getSource(sourceId)) {
+          rasterSourceIds.current.add(sourceId)
           map.current!.addSource(sourceId, { type: 'raster', url: `cog://${output.cog_url}`, tileSize: 256 })
           map.current!.addLayer({ id: layerId, type: 'raster', source: sourceId,
             paint: { 'raster-opacity': opacity }, layout: { visibility } })
@@ -660,6 +680,11 @@ export default function MapPage() {
       const toRemove = [`${layerId}-circle`, `${layerId}-fill`, `${layerId}-line`, layerId]
       toRemove.forEach(id => { if (map.current!.getLayer(id)) map.current!.removeLayer(id) })
       if (map.current.getSource(sourceId)) map.current.removeSource(sourceId)
+      rasterSourceIds.current.delete(sourceId)
+      setLoadingRasterSources(prev => {
+        if (!prev.has(sourceId)) return prev
+        const next = new Set(prev); next.delete(sourceId); return next
+      })
     }
   }
 
@@ -975,6 +1000,14 @@ export default function MapPage() {
               <div className="w-8 h-8 border-2 animate-spin" style={{ borderRadius: 99, borderColor: '#374151', borderTopColor: '#6AA8A0' }} />
               <p className="text-xs text-white/30 tracking-widest uppercase">Loading map</p>
             </div>
+          </div>
+        )}
+
+        {/* Raster tiles still streaming in — non-blocking, just so it doesn't look frozen */}
+        {mapReady && loadingRasterSources.size > 0 && (
+          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/70 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-full shadow-lg pointer-events-none">
+            <div className="w-3 h-3 border-2 animate-spin flex-shrink-0" style={{ borderRadius: 99, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#6AA8A0' }} />
+            Loading imagery...
           </div>
         )}
 
