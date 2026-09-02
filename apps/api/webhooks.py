@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import APIRouter, Request, HTTPException
 from svix.webhooks import Webhook, WebhookVerificationError
 import psycopg2
@@ -8,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 router = APIRouter()
+logger = logging.getLogger("clerk_webhook")
 
 def get_db_conn():
     return psycopg2.connect(
@@ -33,6 +35,7 @@ async def clerk_webhook(request: Request):
 
     event_type = event.get("type")
     data = event.get("data", {})
+    logger.warning("CLERK_WEBHOOK event=%s data=%s", event_type, data)
 
     if event_type == "user.created":
         clerk_id = data.get("id")
