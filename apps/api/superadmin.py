@@ -618,9 +618,9 @@ def admin_reprocess_image(image_id: str, _: str = Depends(require_superadmin)):
         job_id = str(job_row["id"])
     else:
         cur.execute("""
-            INSERT INTO jobs (owner_id, type, status, params)
-            VALUES (%s, 'raster_ingest', 'queued', %s) RETURNING id
-        """, (img["owner_id"], json.dumps({"image_id": image_id, "gcs_path": img["gcs_path"], "filename": img["filename"]})))
+            INSERT INTO jobs (owner_id, type, status, input_ref, input_image_id)
+            VALUES (%s, 'raster_ingest', 'queued', %s, %s) RETURNING id
+        """, (img["owner_id"], json.dumps({"image_id": image_id, "gcs_path": img["gcs_path"], "filename": img["filename"]}), image_id))
         job_id = str(cur.fetchone()["id"])
     cur.execute("UPDATE images SET status='processing' WHERE id=%s", (image_id,))
     conn.commit(); cur.close(); conn.close()
@@ -665,7 +665,7 @@ def admin_transform_image(image_id: str, req: AdminTransformRequest, _: str = De
         else:
             target_epsg = current_epsg
     cur.execute("""
-        INSERT INTO jobs (owner_id, type, status, params, input_image_id)
+        INSERT INTO jobs (owner_id, type, status, input_ref, input_image_id)
         SELECT owner_id, 'raster_transform', 'queued', %s, %s FROM images WHERE id = %s
         RETURNING id
     """, (json.dumps({"image_id": image_id, "new_epsg": req.new_epsg, "new_resolution_x": req.new_resolution_x, "new_resolution_y": req.new_resolution_y}), image_id, image_id))
@@ -686,7 +686,7 @@ def admin_transform_vector(vector_id: str, req: AdminTransformRequest, _: str = 
         cur.close(); conn.close()
         raise HTTPException(404, "Vector not found")
     cur.execute("""
-        INSERT INTO jobs (owner_id, type, status, params, input_vector_id)
+        INSERT INTO jobs (owner_id, type, status, input_ref, input_vector_id)
         VALUES (%s, 'vector_transform', 'queued', %s, %s) RETURNING id
     """, (row["owner_id"], json.dumps({"vector_id": vector_id, "new_epsg": req.new_epsg}), vector_id))
     job_id = str(cur.fetchone()["id"])
@@ -756,9 +756,9 @@ def admin_reprocess_vector(vector_id: str, _: str = Depends(require_superadmin))
         job_id = str(job_row["id"])
     else:
         cur.execute("""
-            INSERT INTO jobs (owner_id, type, status, params)
-            VALUES (%s, 'vector_ingest', 'queued', %s) RETURNING id
-        """, (vec["owner_id"], json.dumps({"vector_id": vector_id, "gcs_path": vec["gcs_path"], "filename": vec["filename"]})))
+            INSERT INTO jobs (owner_id, type, status, input_ref, input_vector_id)
+            VALUES (%s, 'vector_ingest', 'queued', %s, %s) RETURNING id
+        """, (vec["owner_id"], json.dumps({"vector_id": vector_id, "gcs_path": vec["gcs_path"], "filename": vec["filename"]}), vector_id))
         job_id = str(cur.fetchone()["id"])
     cur.execute("UPDATE vectors SET status='processing' WHERE id=%s", (vector_id,))
     conn.commit(); cur.close(); conn.close()
