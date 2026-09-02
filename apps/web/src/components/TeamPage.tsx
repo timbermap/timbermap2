@@ -187,7 +187,6 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
         </div>
         <OrganizationProfile
-          routing="hash"
           appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
         />
       </div>
