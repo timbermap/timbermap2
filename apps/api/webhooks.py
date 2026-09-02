@@ -68,6 +68,30 @@ async def clerk_webhook(request: Request):
         cur.close()
         conn.close()
 
+    elif event_type == "organization.created":
+        # Fired when the org itself is created — Clerk does not reliably
+        # follow this with a separate organizationMembership.created event
+        # for the creator, so this is the one place that's guaranteed to
+        # fire. Adopt the creator's existing personal account as the org's
+        # shared account, same as the "first membership" branch below.
+        org_id  = data.get("id")
+        user_id = data.get("created_by")
+        if org_id and user_id:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE accounts SET clerk_org_id = %s
+                WHERE id = (SELECT account_id FROM users WHERE clerk_id = %s)
+                  AND clerk_org_id IS NULL
+            """, (org_id, user_id))
+            cur.execute(
+                "UPDATE users SET org_role = 'admin' WHERE clerk_id = %s",
+                (user_id,),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+
     elif event_type == "organizationMembership.created":
         org_id   = data.get("organization", {}).get("id")
         user_id  = data.get("public_user_data", {}).get("user_id")

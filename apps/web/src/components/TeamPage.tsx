@@ -38,7 +38,11 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   // immediately — no navigation needed, just re-check our own DB once that
   // happens (the webhook that syncs it usually beats this by a beat, but
   // load() is cheap and harmless to call again if it hasn't yet).
-  useEffect(() => { if (organization && isLoaded && user) load() }, [organization, isLoaded, user, load])
+  // Keyed on organization?.id, not the object itself — Clerk hands out a
+  // new object reference on every internal revalidation (several per
+  // second right after creating an org), which was retriggering load() in
+  // a tight loop and made the UI look permanently stuck on "Loading team".
+  useEffect(() => { if (organization && isLoaded && user) load() }, [organization?.id, isLoaded, user, load])
 
   async function toggleModel(teammateClerkId: string, modelId: string, hasAccess: boolean) {
     const key = `${teammateClerkId}:${modelId}`
