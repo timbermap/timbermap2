@@ -718,7 +718,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-gray-900">{selected.email}</p>
-                    {selected.is_organization && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">Organization</span>}
+                    {selected.is_organization && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">Team</span>}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">Joined {fmtDate(selected.created_at)}</p>
                 </div>

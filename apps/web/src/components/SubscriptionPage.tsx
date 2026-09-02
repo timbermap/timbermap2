@@ -118,7 +118,7 @@ export default function SubscriptionPage() {
       {/* Organization */}
       {account.is_organization ? (
         <div className="bg-[#EEF7F6] border border-[#A0CECC]/50 rounded-2xl p-5 mb-5">
-          <p className="text-sm font-semibold text-[#2A5750] mb-1">Organization account</p>
+          <p className="text-sm font-semibold text-[#2A5750] mb-1">Team account</p>
           <p className="text-xs text-[#3D7A72] mb-3">Usage above is shared across your whole team.</p>
           <Link href="/dashboard/team" className="text-xs font-semibold text-[#3D7A72] hover:underline">
             Manage team →
@@ -128,11 +128,11 @@ export default function SubscriptionPage() {
         <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
           <p className="text-sm font-semibold text-[#1A2624] mb-1">Working alone?</p>
           <p className="text-xs text-gray-500 mb-3">
-            Create an organization to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
+            Create a team to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
           </p>
           <Link href="/create-organization"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D7A72] hover:underline">
-            Create organization →
+            Create team →
           </Link>
         </div>
       )}

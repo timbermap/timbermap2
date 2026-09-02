@@ -33,11 +33,10 @@ export default function CreateOrganizationPage() {
             </Link>
           </div>
 
-          <h1 className="text-xl font-medium text-[#1C1C1C] mb-2">Set up your organization</h1>
+          <h1 className="text-xl font-medium text-[#1C1C1C] mb-2">Set up your team</h1>
           <p className="text-sm text-gray-400 font-light leading-relaxed mb-6">
-            An organization is only for teams — it lets you invite teammates and
-            put everyone on one shared plan. You don&apos;t need one to use
-            Timbermap on your own.
+            A team lets you invite teammates and put everyone on one shared
+            plan. You don&apos;t need one to use Timbermap on your own.
           </p>
 
           <CreateOrganization

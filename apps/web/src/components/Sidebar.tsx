@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { UserButton, useUser } from '@clerk/nextjs'
 import { useState, useEffect } from 'react'
 import SubscriptionPage from './SubscriptionPage'
+import TeamPage from './TeamPage'
 
 const nav = [
   { label: 'Dashboard', href: '/dashboard', icon: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0"><path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd"/></svg> },
@@ -21,7 +22,6 @@ export default function Sidebar() {
   const { user, isLoaded } = useUser()
   const [collapsed, setCollapsed]     = useState(true)
   const [isSuperadmin, setIsSuperadmin] = useState(false)
-  const [isAccountAdmin, setIsAccountAdmin] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('sidebar-collapsed')
@@ -33,10 +33,6 @@ export default function Sidebar() {
     fetch(`${API}/superadmin/am-i-admin`, { headers: { 'x-clerk-id': user.id } })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.is_superadmin) setIsSuperadmin(true) })
-      .catch(() => {})
-    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.org_role === 'admin') setIsAccountAdmin(true) })
       .catch(() => {})
   }, [isLoaded, user])
 
@@ -119,18 +115,6 @@ export default function Sidebar() {
                     href="/dashboard/admin"
                   />
                 )}
-                {isAccountAdmin && (
-                  <UserButton.Link
-                    label="Admin"
-                    labelIcon={
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-                        <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3 15.5C3 13.567 5.239 12 8 12c.34 0 .672.024.994.07C8.373 12.85 8 13.86 8 15v.5A1.5 1.5 0 0 0 9.5 17h-5A1.5 1.5 0 0 1 3 15.5ZM14 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>
-                        <path d="M17 15.5A1.5 1.5 0 0 1 15.5 17h-5A1.5 1.5 0 0 1 9 15.5v-.657C9 12.686 11.239 11 14 11s5 1.686 5 3.843v.657Z"/>
-                      </svg>
-                    }
-                    href="/dashboard/team"
-                  />
-                )}
               </UserButton.MenuItems>
               <UserButton.UserProfilePage
                 label="Subscription"
@@ -141,6 +125,17 @@ export default function Sidebar() {
                   </svg>
                 }>
                 <SubscriptionPage />
+              </UserButton.UserProfilePage>
+              <UserButton.UserProfilePage
+                label="Team"
+                url="team"
+                labelIcon={
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+                    <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3 15.5C3 13.567 5.239 12 8 12c.34 0 .672.024.994.07C8.373 12.85 8 13.86 8 15v.5A1.5 1.5 0 0 0 9.5 17h-5A1.5 1.5 0 0 1 3 15.5ZM14 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>
+                    <path d="M17 15.5A1.5 1.5 0 0 1 15.5 17h-5A1.5 1.5 0 0 1 9 15.5v-.657C9 12.686 11.239 11 14 11s5 1.686 5 3.843v.657Z"/>
+                  </svg>
+                }>
+                <TeamPage />
               </UserButton.UserProfilePage>
             </UserButton>
             {!collapsed && (
