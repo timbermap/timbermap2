@@ -6,6 +6,7 @@ For large files (>1GB): reads directly from GCS via /vsigs/ without downloading.
 
 import os
 import json
+import math
 import logging
 import tempfile
 import numpy as np
@@ -231,12 +232,14 @@ def generate_thumbnail(tif_path: str, thumb_path: str, size: int = 256):
         Image.fromarray(img_array.astype(np.uint8), "RGB").save(thumb_path, "JPEG", quality=85)
 
 
-def convert_to_cog(input_path: str, output_path: str):
+def convert_to_cog(input_path: str, output_path: str, extra_warp_args: Optional[list] = None):
     """Convert raster to Cloud-Optimized GeoTIFF in EPSG:3857 using subprocess.
 
     input_path can be a local path or a /vsigs/ GCS path.
     Uses subprocess GDAL tools to avoid Python heap memory pressure.
     Passes GCS auth env vars so subprocesses can read /vsigs/ paths.
+    extra_warp_args lets callers fold a resolution override (e.g. "-tr" for
+    a transform request) into this single warp instead of resampling twice.
     """
     import subprocess
     from osgeo import gdal
@@ -289,7 +292,7 @@ def convert_to_cog(input_path: str, output_path: str):
         "-wm", "512",
         "-multi",
         "--config", "GDAL_CACHEMAX", "256",
-    ] + band_args + [input_path, warped_path]
+    ] + (extra_warp_args or []) + band_args + [input_path, warped_path]
 
     r1 = subprocess.run(cmd_warp, capture_output=True, text=True, timeout=7200, env=gdal_env)
     if r1.returncode != 0:
@@ -332,9 +335,10 @@ def convert_to_cog(input_path: str, output_path: str):
         raise RuntimeError(f"gdal_translate COG failed: {r3.stderr[:500]}")
 
 
-def warp_raster(input_path: str, output_path: str,
-                target_epsg: Optional[str], target_resolution_m: Optional[float] = None):
-    """Reproject/resample raster — disk-based. input_path can be /vsigs/."""
+def _warp_metadata(input_path: str, target_epsg: Optional[str], target_resolution_m: Optional[float]) -> dict:
+    """Metadata-only reprojection via a VRT (no pixel data materialized) —
+    reports accurate epsg/pixel-size/area for a transform request without
+    paying for a second full-resolution resample of the actual raster."""
     from osgeo import gdal
     gdal.UseExceptions()
     warp_opts = gdal.WarpOptions(
@@ -342,16 +346,29 @@ def warp_raster(input_path: str, output_path: str,
         xRes=target_resolution_m,
         yRes=target_resolution_m,
         resampleAlg=gdal.GRA_Bilinear,
-        creationOptions=["COMPRESS=LZW", "TILED=YES", "BLOCKXSIZE=512", "BLOCKYSIZE=512", "BIGTIFF=YES"],
-        format="GTiff",
-        warpMemoryLimit=512,    # Low RAM usage — safe for large files
-        multithread=True,
+        format="VRT",
     )
-    result = gdal.Warp(output_path, input_path, options=warp_opts)
-    if result is None:
-        raise RuntimeError(f"gdal.Warp failed for {input_path}")
-    result.FlushCache()
-    result = None
+    with tempfile.TemporaryDirectory() as vrt_dir:
+        vrt_path = os.path.join(vrt_dir, "meta.vrt")
+        result = gdal.Warp(vrt_path, input_path, options=warp_opts)
+        if result is None:
+            raise RuntimeError(f"gdal.Warp (metadata VRT) failed for {input_path}")
+        result = None
+        return extract_metadata(vrt_path)
+
+
+def _mercator_center_lat(input_path: str) -> float:
+    """Center latitude (WGS84 degrees) of a raster, used to correct a true
+    ground resolution into the equivalent EPSG:3857 resolution — Web
+    Mercator stretches distances by 1/cos(lat) relative to the ground."""
+    import rasterio
+    from rasterio.warp import transform_bounds
+    with rasterio.open(input_path) as src:
+        if src.crs and src.crs.to_epsg() != 4326:
+            left, bottom, right, top = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+        else:
+            left, bottom, right, top = src.bounds
+    return (bottom + top) / 2
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -467,8 +484,7 @@ def _do_transform(job: TransformJob):
         size_mb      = file_size / 1024 / 1024
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            warped_path = os.path.join(tmpdir, "warped.tif")
-            cog_path    = os.path.join(tmpdir, "cog.tif")
+            cog_path = os.path.join(tmpdir, "cog.tif")
 
             # Always download locally for transform — vsigs streaming breaks on long warp operations
             update_job(job.job_id, "running", f"Downloading ({size_mb:.0f} MB)...")
@@ -479,6 +495,7 @@ def _do_transform(job: TransformJob):
 
             # Auto-select UTM if metric resolution requested but CRS is geographic (degrees)
             target_epsg = job.target_epsg
+            center_lat = _mercator_center_lat(src_path)
             if job.target_resolution_m:
                 import rasterio
                 with rasterio.open(src_path) as ds:
@@ -494,14 +511,25 @@ def _do_transform(job: TransformJob):
 
             epsg_label = f"EPSG:{target_epsg}" if target_epsg else "current CRS"
             update_job(job.job_id, "running", f"Resampling to {epsg_label}...")
-            warp_raster(src_path, warped_path, target_epsg, job.target_resolution_m)
+
+            # Single real resample straight to EPSG:3857 (map-render CRS),
+            # with the requested ground resolution corrected for Web
+            # Mercator's cos(lat) scale distortion — replaces the previous
+            # two full-resolution warps (target_epsg, then 3857) with one.
+            extra_warp_args = None
+            if job.target_resolution_m:
+                res_3857 = job.target_resolution_m / math.cos(math.radians(center_lat))
+                extra_warp_args = ["-tr", str(res_3857), str(res_3857)]
+
+            # Metadata (epsg/pixel size/area) in the user's requested CRS —
+            # computed via a VRT, no pixel data materialized.
+            meta_warped = _warp_metadata(src_path, target_epsg, job.target_resolution_m)
 
             if is_cancelled(job.job_id): return
-            meta_warped = extract_metadata(warped_path)
 
             update_job(job.job_id, "running", "Converting to COG (EPSG:3857)...")
             cog_gcs_dest = f"users/{job.clerk_id}/cogs/{job.image_id}.tif"
-            convert_to_cog(warped_path, cog_path)
+            convert_to_cog(src_path, cog_path, extra_warp_args=extra_warp_args)
             upload_to_gcs(cog_path, cog_gcs_dest)
 
             meta_cog = extract_metadata(cog_path)
