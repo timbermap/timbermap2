@@ -263,6 +263,7 @@ export default function Dashboard() {
   const displayJobs       = jobs.slice(0, 5)
   const activeModels      = models.filter(m => m.has_access)
   const recentReadyImages = readyImages.slice(0, 3)
+  const isNewAccount      = images.length === 0 && vectors.length === 0
   const recentVectors     = vectors.filter(v => v.status === 'ready').slice(0, 3)
 
   if (!isLoaded || loading) return (
@@ -308,7 +309,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Getting started (new accounts only) ── */}
-      {images.length === 0 && vectors.length === 0 && (
+      {isNewAccount && (
         <div className="rounded-2xl border border-[#A0CECC]/50 bg-gradient-to-br from-[#EEF7F6] to-white p-6 mb-4">
           <h2 className="text-lg font-semibold text-[#1C1C1C] mb-1">Welcome to Timbermap</h2>
           <p className="text-sm text-gray-500 mb-5">Three steps to your first result — start with whichever you have on hand.</p>
@@ -345,6 +346,8 @@ export default function Dashboard() {
         </div>
       )}
 
+      {!isNewAccount && (
+      <>
       {/* ── Row 1: Stats ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard
@@ -581,6 +584,8 @@ export default function Dashboard() {
         </div>
 
       </div>
+      </>
+      )}
     </div>
   )
 }
