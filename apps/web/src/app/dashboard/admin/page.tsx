@@ -113,6 +113,7 @@ const RetryIcon   = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2
 const MapPinIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 .788.472l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd"/></svg>
 const ReprojIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clipRule="evenodd"/></svg>
 const SearchIcon  = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd"/></svg>
+const LockIcon    = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clipRule="evenodd"/></svg>
 type SortDir = 'asc' | 'desc'
 const SortIcon = ({ dir }: { dir?: SortDir }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline ml-1">
@@ -1763,7 +1764,7 @@ function SystemTab({ clerkId, api }: { clerkId: string; api: string }) {
 }
 
 // ── Tab: Database ─────────────────────────────────────────────────────────────
-type DbTable = { name: string; row_count: number }
+type DbTable = { name: string; row_count: number; readonly: boolean }
 type DbRows = { table: string; columns: string[]; rows: Record<string, unknown>[]; editable: boolean }
 
 function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
@@ -1783,7 +1784,9 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
       .then(d => {
         const ts: DbTable[] = d.tables || []
         setTables(ts)
-        if (ts.length > 0) setSelected(ts[0].name)
+        const firstEditable = ts.find(t => !t.readonly)
+        if (firstEditable) setSelected(firstEditable.name)
+        else if (ts.length > 0) setSelected(ts[0].name)
       })
       .finally(() => setLoadingTables(false))
   }, [clerkId, api])
@@ -1840,7 +1843,10 @@ function DatabaseTab({ clerkId, api }: { clerkId: string; api: string }) {
                 className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors ${
                   selected === t.name ? 'bg-[#EEF7F6] text-[#3D7A72] font-medium' : 'text-gray-600 hover:bg-gray-50'
                 }`}>
-                <span className="truncate">{t.name}</span>
+                <span className="truncate flex items-center gap-1.5">
+                  {t.name}
+                  {t.readonly && <span title="Read-only" className="text-gray-300"><LockIcon /></span>}
+                </span>
                 <span className="text-xs text-gray-300 tabular-nums">{t.row_count}</span>
               </button>
             ))}

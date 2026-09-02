@@ -781,7 +781,7 @@ def list_db_tables(_: str = Depends(require_superadmin)):
     result = []
     for t in tables:
         cur.execute(f'SELECT COUNT(*) AS n FROM "{t}"')
-        result.append({"name": t, "row_count": cur.fetchone()["n"]})
+        result.append({"name": t, "row_count": cur.fetchone()["n"], "readonly": t in DB_BROWSER_READONLY})
     cur.close(); conn.close()
     return {"tables": result}
 
