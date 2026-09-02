@@ -285,6 +285,46 @@ def convert_to_cog(input_path: str, output_path: str):
         raise RuntimeError(f"gdal_translate COG failed (rc={r3.returncode}): stdout={r3.stdout[:300]} stderr={r3.stderr[:300]}")
 
 
+def generate_display_cog(cog_path: str, display_path: str) -> bool:
+    """Lightweight JPEG-compressed COG for map display — ~5-10x smaller than
+    the lossless DEFLATE COG, reusing its overviews (no re-warp needed).
+    Only safe for 8-bit 1-4 band imagery (JPEG's constraint in the COG
+    driver); returns False otherwise so the caller falls back to serving
+    the lossless COG unchanged."""
+    import subprocess
+    from osgeo import gdal
+    gdal.UseExceptions()
+
+    ds = gdal.Open(cog_path)
+    if ds is None:
+        return False
+    nbands = ds.RasterCount
+    dtype  = ds.GetRasterBand(1).DataType
+    ds = None
+    if dtype != gdal.GDT_Byte or nbands not in (1, 2, 3, 4):
+        return False
+
+    gdal_env = os.environ.copy()
+    gdal_env.update({
+        "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
+        "GDAL_HTTP_TIMEOUT": "300",
+    })
+    cmd = [
+        "gdal_translate", "-of", "COG",
+        "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
+        "-co", "BLOCKSIZE=256",
+        "-co", "OVERVIEWS=FORCE_USE_EXISTING",
+        "-co", "BIGTIFF=YES",
+        "--config", "GDAL_CACHEMAX", "2048",
+        cog_path, display_path,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
+    if r.returncode != 0:
+        logging.warning("Display COG generation failed for %s: %s", cog_path, r.stderr[:300])
+        return False
+    return True
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -333,6 +373,15 @@ def main():
             upload_to_gcs(thumb_path, f"users/{CLERK_ID}/thumbnails/{IMAGE_ID}.jpg")
             logging.info("Thumbnail uploaded")
 
+            update_job("running", "Generating display COG...")
+            display_path = os.path.join(tmpdir, "display.tif")
+            has_display = generate_display_cog(cog_path, display_path)
+            if has_display:
+                upload_to_gcs(display_path, f"users/{CLERK_ID}/cogs_display/{IMAGE_ID}.tif")
+                logging.info("Display COG uploaded")
+            else:
+                logging.info("Display COG skipped (unsupported band/dtype or translate failed)")
+
             bbox = meta.get("bbox", {})
             update_image(
                 status="ready",
@@ -346,6 +395,7 @@ def main():
                 bbox_miny=bbox.get("miny"),
                 bbox_maxx=bbox.get("maxx"),
                 bbox_maxy=bbox.get("maxy"),
+                has_display_cog=has_display,
             )
 
             update_job("done", "Ingest complete")

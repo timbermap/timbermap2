@@ -801,7 +801,8 @@ def get_layers(clerk_id: str):
     for img in images:
         if img.get("status") == "ready":
             try:
-                cog_path = f"users/{clerk_id}/cogs/{img['id']}.tif"
+                cog_subdir = "cogs_display" if img.get("has_display_cog") else "cogs"
+                cog_path = f"users/{clerk_id}/{cog_subdir}/{img['id']}.tif"
                 blob = bucket.blob(cog_path)
                 signed_url = blob.generate_signed_url(
                     version="v4", expiration=timedelta(days=7), method="GET"

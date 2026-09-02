@@ -335,6 +335,46 @@ def convert_to_cog(input_path: str, output_path: str, extra_warp_args: Optional[
         raise RuntimeError(f"gdal_translate COG failed: {r3.stderr[:500]}")
 
 
+def generate_display_cog(cog_path: str, display_path: str) -> bool:
+    """Lightweight JPEG-compressed COG for map display — ~5-10x smaller than
+    the lossless DEFLATE COG, reusing its overviews (no re-warp needed).
+    Only safe for 8-bit 1-4 band imagery (JPEG's constraint in the COG
+    driver); returns False otherwise so the caller falls back to serving
+    the lossless COG unchanged."""
+    import subprocess
+    from osgeo import gdal
+    gdal.UseExceptions()
+
+    ds = gdal.Open(cog_path)
+    if ds is None:
+        return False
+    nbands = ds.RasterCount
+    dtype  = ds.GetRasterBand(1).DataType
+    ds = None
+    if dtype != gdal.GDT_Byte or nbands not in (1, 2, 3, 4):
+        return False
+
+    gdal_env = os.environ.copy()
+    gdal_env.update({
+        "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
+        "GDAL_HTTP_TIMEOUT": "300",
+    })
+    cmd = [
+        "gdal_translate", "-of", "COG",
+        "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
+        "-co", "BLOCKSIZE=256",
+        "-co", "OVERVIEWS=FORCE_USE_EXISTING",
+        "-co", "BIGTIFF=YES",
+        "--config", "GDAL_CACHEMAX", "256",
+        cog_path, display_path,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
+    if r.returncode != 0:
+        logging.warning("Display COG generation failed for %s: %s", cog_path, r.stderr[:300])
+        return False
+    return True
+
+
 def _warp_metadata(input_path: str, target_epsg: Optional[str], target_resolution_m: Optional[float]) -> dict:
     """Metadata-only reprojection via a VRT (no pixel data materialized) —
     reports accurate epsg/pixel-size/area for a transform request without
@@ -437,6 +477,12 @@ def _do_ingest(job: IngestJob):
             generate_thumbnail(cog_path if os.path.exists(cog_path) else src_path, thumb_path)
             upload_to_gcs(thumb_path, f"users/{job.clerk_id}/thumbnails/{job.image_id}.jpg")
 
+            # Lightweight display COG for map viewing — non-fatal if skipped
+            display_path = os.path.join(tmpdir, "display.tif")
+            has_display = generate_display_cog(cog_path, display_path)
+            if has_display:
+                upload_to_gcs(display_path, f"users/{job.clerk_id}/cogs_display/{job.image_id}.tif")
+
             bbox = meta.get("bbox", {})
             update_image(
                 job.image_id,
@@ -451,6 +497,7 @@ def _do_ingest(job: IngestJob):
                 bbox_miny=bbox.get("miny"),
                 bbox_maxx=bbox.get("maxx"),
                 bbox_maxy=bbox.get("maxy"),
+                has_display_cog=has_display,
             )
 
             update_job(job.job_id, "done", "Ingest complete")
@@ -532,6 +579,12 @@ def _do_transform(job: TransformJob):
             convert_to_cog(src_path, cog_path, extra_warp_args=extra_warp_args)
             upload_to_gcs(cog_path, cog_gcs_dest)
 
+            # Lightweight display COG for map viewing — non-fatal if skipped
+            display_path = os.path.join(tmpdir, "display.tif")
+            has_display = generate_display_cog(cog_path, display_path)
+            if has_display:
+                upload_to_gcs(display_path, f"users/{job.clerk_id}/cogs_display/{job.image_id}.tif")
+
             meta_cog = extract_metadata(cog_path)
             bbox = meta_cog.get("bbox", {})
             update_image(
@@ -547,6 +600,7 @@ def _do_transform(job: TransformJob):
                 bbox_miny=bbox.get("miny"),
                 bbox_maxx=bbox.get("maxx"),
                 bbox_maxy=bbox.get("maxy"),
+                has_display_cog=has_display,
             )
 
             msg = f"Transform complete → EPSG:{job.target_epsg}" + \
