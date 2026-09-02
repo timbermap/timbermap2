@@ -1,6 +1,5 @@
 'use client'
-import { useUser, OrganizationProfile } from '@clerk/nextjs'
-import Link from 'next/link'
+import { useUser, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
 import { useState, useEffect, useCallback } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
@@ -59,9 +58,9 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
       <div className="max-w-lg">
         <h1 className="text-lg font-semibold text-[#1A2624] mb-1">Team</h1>
         <p className="text-sm text-gray-400 mb-6">You&apos;re not part of a team yet.</p>
-        <div className="bg-white border border-gray-100 rounded-2xl p-5">
-          <p className="text-sm font-semibold text-[#1A2624] mb-3">Create a team to:</p>
-          <ul className="space-y-2 mb-5">
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
+          <p className="text-sm font-semibold text-[#1A2624] mb-3">Creating a team lets you:</p>
+          <ul className="space-y-2">
             {[
               'Invite teammates onto your account',
               'Share storage and processing quota across everyone',
@@ -73,10 +72,19 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
               </li>
             ))}
           </ul>
-          <Link href="/create-organization"
-            className="inline-flex items-center gap-1.5 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-            Create team →
-          </Link>
+        </div>
+        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <CreateOrganization
+            afterCreateOrganizationUrl={typeof window !== 'undefined' ? window.location.pathname : undefined}
+            appearance={{
+              elements: {
+                rootBox: 'w-full', card: 'shadow-none border-0 w-full p-4',
+                headerTitle: 'hidden', headerSubtitle: 'hidden',
+                formButtonPrimary: 'bg-[#3D7A72] hover:bg-[#2A5750] text-white',
+                footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
+              },
+            }}
+          />
         </div>
       </div>
     )
@@ -166,25 +174,18 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
         )}
       </div>
 
-      {/* Invite / manage members — Clerk's own UI. Too tall for the user-menu
-          popover, so that context gets a link to the full page instead. */}
-      {compact ? (
-        <Link href="/dashboard/team"
-          className="flex items-center justify-between gap-3 bg-[#EEF7F6] hover:bg-[#D6EEED] border border-[#A0CECC]/50 rounded-2xl px-5 py-4 transition-colors">
-          <span className="text-sm font-medium text-[#2A5750]">Invite teammates & manage members</span>
-          <span className="text-xs font-semibold text-[#3D7A72] whitespace-nowrap">Open →</span>
-        </Link>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="p-5 pb-0">
-            <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
-          </div>
-          <OrganizationProfile
-            routing="hash"
-            appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
-          />
+      {/* Invite / manage members — Clerk's own UI, embedded inline. In the
+          user-menu popover this is scroll-capped so it fits without ever
+          navigating away from the tab. */}
+      <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${compact ? 'max-h-[55vh] overflow-y-auto' : ''}`}>
+        <div className="p-5 pb-0">
+          <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
         </div>
-      )}
+        <OrganizationProfile
+          routing="hash"
+          appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
+        />
+      </div>
     </div>
   )
 }
