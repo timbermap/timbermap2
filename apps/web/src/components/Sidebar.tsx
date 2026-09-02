@@ -117,16 +117,6 @@ export default function Sidebar() {
                 )}
               </UserButton.MenuItems>
               <UserButton.UserProfilePage
-                label="Subscription"
-                url="subscription"
-                labelIcon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-                    <path fillRule="evenodd" d="M2.5 4A1.5 1.5 0 0 0 1 5.5V6h18v-.5A1.5 1.5 0 0 0 17.5 4h-15ZM19 8.5H1v6A1.5 1.5 0 0 0 2.5 16h15a1.5 1.5 0 0 0 1.5-1.5v-6ZM3 13.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75Zm4.75-.75a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clipRule="evenodd"/>
-                  </svg>
-                }>
-                <SubscriptionPage />
-              </UserButton.UserProfilePage>
-              <UserButton.UserProfilePage
                 label="Team"
                 url="team"
                 labelIcon={
@@ -135,7 +125,17 @@ export default function Sidebar() {
                     <path d="M17 15.5A1.5 1.5 0 0 1 15.5 17h-5A1.5 1.5 0 0 1 9 15.5v-.657C9 12.686 11.239 11 14 11s5 1.686 5 3.843v.657Z"/>
                   </svg>
                 }>
-                <TeamPage />
+                <TeamPage compact />
+              </UserButton.UserProfilePage>
+              <UserButton.UserProfilePage
+                label="Subscription"
+                url="subscription"
+                labelIcon={
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+                    <path fillRule="evenodd" d="M2.5 4A1.5 1.5 0 0 0 1 5.5V6h18v-.5A1.5 1.5 0 0 0 17.5 4h-15ZM19 8.5H1v6A1.5 1.5 0 0 0 2.5 16h15a1.5 1.5 0 0 0 1.5-1.5v-6ZM3 13.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75Zm4.75-.75a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5h-3.5Z" clipRule="evenodd"/>
+                  </svg>
+                }>
+                <SubscriptionPage />
               </UserButton.UserProfilePage>
             </UserButton>
             {!collapsed && (

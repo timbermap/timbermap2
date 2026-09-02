@@ -18,7 +18,7 @@ type AccountInfo = {
 const SpinIcon = () => <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd"/></svg>
 
-export default function TeamPage() {
+export default function TeamPage({ compact = false }: { compact?: boolean }) {
   const { user, isLoaded } = useUser()
   const [info, setInfo]     = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -166,16 +166,25 @@ export default function TeamPage() {
         )}
       </div>
 
-      {/* Invite / manage members — Clerk's own UI */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-5 pb-0">
-          <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
+      {/* Invite / manage members — Clerk's own UI. Too tall for the user-menu
+          popover, so that context gets a link to the full page instead. */}
+      {compact ? (
+        <Link href="/dashboard/team"
+          className="flex items-center justify-between gap-3 bg-[#EEF7F6] hover:bg-[#D6EEED] border border-[#A0CECC]/50 rounded-2xl px-5 py-4 transition-colors">
+          <span className="text-sm font-medium text-[#2A5750]">Invite teammates & manage members</span>
+          <span className="text-xs font-semibold text-[#3D7A72] whitespace-nowrap">Open →</span>
+        </Link>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-5 pb-0">
+            <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
+          </div>
+          <OrganizationProfile
+            routing="hash"
+            appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
+          />
         </div>
-        <OrganizationProfile
-          routing="hash"
-          appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
-        />
-      </div>
+      )}
     </div>
   )
 }
