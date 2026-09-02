@@ -288,8 +288,12 @@ def convert_to_cog(input_path: str, output_path: str):
 def generate_display_cog(cog_path: str, display_path: str) -> bool:
     """Lightweight JPEG-compressed COG for map display.
 
-    8-bit imagery: reuses the lossless COG's overviews directly (no re-warp
-    needed) — the fast, common case for ordinary RGB(A) photos.
+    8-bit imagery: re-encodes the first 3 bands as JPEG, letting the COG
+    driver build a fresh overview pyramid — the common case for ordinary
+    RGB(A) photos. (Previously reused the source COG's overviews via
+    OVERVIEWS=FORCE_USE_EXISTING, but that silently produced zero
+    overviews when the source had an alpha band, leaving huge images
+    with no fast low-zoom path to render from — see San Ramon incident.)
 
     Non-8-bit imagery (e.g. UInt16 multispectral sensors — real values often
     occupy a small slice of the range, e.g. 0-5000 of 0-65535, so displaying
@@ -319,12 +323,16 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
     })
 
     if is_byte:
+        display_bands = min(nbands, 3)
+        band_args = []
+        for i in range(1, display_bands + 1):
+            band_args += ["-b", str(i)]
         ds = None
         cmd = [
             "gdal_translate", "-of", "COG",
+            *band_args,
             "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
             "-co", "BLOCKSIZE=256",
-            "-co", "OVERVIEWS=FORCE_USE_EXISTING",
             "-co", "BIGTIFF=YES",
             "--config", "GDAL_CACHEMAX", "2048",
             cog_path, display_path,
