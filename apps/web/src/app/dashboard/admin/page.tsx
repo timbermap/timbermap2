@@ -35,6 +35,7 @@ type User = {
 }
 type UserDetail = User & {
   account_id: string; org_role: string | null; account_plan: string; clerk_org_id: string | null
+  plan_expires_at: string | null
   stats: Record<string,number>
   account_stats: { image_count: number; job_count: number; storage_bytes: number }
   teammates: { id: string; clerk_id: string; email: string; username: string; org_role: string | null }[]
@@ -541,6 +542,8 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [selected, setSelected]     = useState<UserDetail | null>(null)
   const [loading, setLoading]       = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [expirationEdit, setExpirationEdit] = useState('')
+  const [savingExpiration, setSavingExpiration] = useState(false)
   const h = { 'x-clerk-id': clerkId }
 
   useEffect(() => {
@@ -555,6 +558,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     setLoadingDetail(true)
     const d = await fetch(`${api}/superadmin/users/${u.clerk_id}`, { headers: h }).then(r => r.json())
     setSelected(d)
+    setExpirationEdit(d.plan_expires_at || '')
     setLoadingDetail(false)
   }
 
@@ -609,6 +613,19 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
     setSelected(d)
     const ul = await fetch(`${api}/superadmin/users`, { headers: h }).then(r => r.json())
     setUsers(ul.users || [])
+  }
+
+  async function savePlanExpiration(user: UserDetail, dateStr: string) {
+    setSavingExpiration(true)
+    try {
+      await fetch(`${api}/superadmin/users/${user.clerk_id}/plan-expiration`, {
+        method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_expires_at: dateStr || null }),
+      })
+      const d = await fetch(`${api}/superadmin/users/${user.clerk_id}`, { headers: h }).then(r => r.json())
+      setSelected(d)
+      setExpirationEdit(d.plan_expires_at || '')
+    } finally { setSavingExpiration(false) }
   }
 
   if (loading) return <div className="flex items-center gap-2 text-gray-400 py-8"><SpinIcon />Loading...</div>
@@ -680,6 +697,24 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                     {selected.account_plan === 'custom' ? '✦ Custom tier' : 'Mark custom'}
                   </button>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 mb-3 bg-gray-50 rounded-xl px-3 py-2">
+                <span className="text-xs text-gray-400 flex-shrink-0">Plan expires</span>
+                <input type="date" value={expirationEdit}
+                  onChange={e => setExpirationEdit(e.target.value)}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-[#6AA8A0]" />
+                <button onClick={() => savePlanExpiration(selected, expirationEdit)}
+                  disabled={savingExpiration || expirationEdit === (selected.plan_expires_at || '')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-[#3D7A72] text-white font-medium disabled:opacity-40 hover:bg-[#2A5750] transition-colors">
+                  {savingExpiration ? '...' : 'Save'}
+                </button>
+                {selected.plan_expires_at && (
+                  <button onClick={() => { setExpirationEdit(''); savePlanExpiration(selected, '') }}
+                    disabled={savingExpiration}
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-auto flex-shrink-0">
+                    Clear
+                  </button>
+                )}
               </div>
               <p className="text-xs text-gray-300 mb-1.5">This user's own activity</p>
               <div className="grid grid-cols-3 gap-2 mb-3">

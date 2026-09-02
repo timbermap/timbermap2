@@ -362,12 +362,26 @@ def superadmin_set_plan(clerk_id: str, plan: str):
     conn.close()
     return row is not None
 
+def superadmin_set_plan_expiration(clerk_id: str, plan_expires_at):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE accounts SET plan_expires_at = %s
+        WHERE id = (SELECT account_id FROM users WHERE clerk_id = %s)
+        RETURNING id
+    """, (plan_expires_at, clerk_id))
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row is not None
+
 def superadmin_get_user_detail(clerk_id: str):
     conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT u.*, a.plan AS account_plan, a.clerk_org_id
+        SELECT u.*, a.plan AS account_plan, a.plan_expires_at, a.clerk_org_id
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
     """, (clerk_id,))
@@ -740,7 +754,7 @@ def get_account_info(clerk_id: str):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT u.id, u.account_id, u.org_role, a.plan
+        SELECT u.id, u.account_id, u.org_role, a.plan, a.plan_expires_at
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
     """, (clerk_id,))
@@ -796,6 +810,7 @@ def get_account_info(clerk_id: str):
     return {
         "org_role": me["org_role"],
         "account_plan": me["plan"],
+        "plan_expires_at": me["plan_expires_at"].isoformat() if me["plan_expires_at"] else None,
         "storage_bytes": usage["storage_bytes"],
         "jobs_this_week": usage["jobs_this_week"],
         "teammates": teammates,

@@ -91,6 +91,9 @@ class SetSuperadminRequest(BaseModel):
 class SetPlanRequest(BaseModel):
     is_custom: bool
 
+class SetPlanExpirationRequest(BaseModel):
+    plan_expires_at: Optional[str] = None  # "YYYY-MM-DD", or null to clear it
+
 class SetTierLimitRequest(BaseModel):
     storage_limit_gb: Optional[int] = None
     weekly_job_limit: Optional[int] = None
@@ -272,7 +275,7 @@ def list_users(_: str = Depends(require_superadmin)):
 def get_user(target_clerk_id: str, _: str = Depends(require_superadmin)):
     user = database.superadmin_get_user_detail(target_clerk_id)
     if not user: raise HTTPException(404, "User not found")
-    for f in ["created_at"]:
+    for f in ["created_at", "plan_expires_at"]:
         if user.get(f): user[f] = user[f].isoformat()
     for job in user.get("recent_jobs", []):
         for f in ["created_at","finished_at"]:
@@ -336,6 +339,12 @@ def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require
     ok = database.superadmin_set_plan(target_clerk_id, plan)
     if not ok: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "plan": plan}
+
+@router.put("/users/{target_clerk_id}/plan-expiration")
+def set_plan_expiration(target_clerk_id: str, req: SetPlanExpirationRequest, _: str = Depends(require_superadmin)):
+    ok = database.superadmin_set_plan_expiration(target_clerk_id, req.plan_expires_at)
+    if not ok: raise HTTPException(404, "User not found")
+    return {"updated": True, "clerk_id": target_clerk_id, "plan_expires_at": req.plan_expires_at}
 
 @router.get("/tier-limits")
 def get_tier_limits(_: str = Depends(require_superadmin)):
