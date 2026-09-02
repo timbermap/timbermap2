@@ -1,7 +1,43 @@
 'use client'
 import { useUser } from '@clerk/nextjs'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { fromBlob } from 'geotiff'
 import Spinner from '@/components/Spinner'
+
+// Mirrors the disk-safety check in workers/raster/ingest_job.py — kept in
+// sync manually since the estimate has to run client-side, before the (very
+// large) file is ever uploaded, to warn the user instead of letting a
+// multi-minute upload end in a server-side failure.
+const MAX_ESTIMATED_DISK_GB = 28
+
+async function checkRasterCapacity(file: File): Promise<{ ok: boolean; message?: string }> {
+  if (!/\.tiff?$/i.test(file.name)) return { ok: true }
+  try {
+    const tiff  = await fromBlob(file)
+    const image = await tiff.getImage()
+    const width  = image.getWidth()
+    const height = image.getHeight()
+    const bands  = image.getSamplesPerPixel()
+    const bits   = Number(image.getBitsPerSample(0)) || 8
+    const bytesPerSample = Math.max(1, Math.ceil(bits / 8))
+    const uncompressedGB  = (width * height * bands * bytesPerSample) / 1e9
+    const estimatedDiskGB = uncompressedGB * 1.5
+    if (estimatedDiskGB > MAX_ESTIMATED_DISK_GB) {
+      return {
+        ok: false,
+        message: `Demasiado grande para procesar: ${uncompressedGB.toFixed(1)}GB sin comprimir `
+          + `(${width}×${height}px, ${bands} banda${bands === 1 ? '' : 's'}). `
+          + `Máximo soportado: ~${(MAX_ESTIMATED_DISK_GB / 1.5).toFixed(0)}GB sin comprimir. `
+          + `Reducí la resolución o el área antes de subir.`,
+      }
+    }
+    return { ok: true }
+  } catch {
+    // Header couldn't be parsed client-side — let the server-side check
+    // (same formula, runs after upload) catch it instead of blocking here.
+    return { ok: true }
+  }
+}
 
 type ImageFile = {
   id: string; filename: string; epsg: string | null; num_bands: number | null
@@ -73,6 +109,38 @@ export default function ImagesPage() {
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
+
+  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number } | null>(null)
+  const [tierLimits,  setTierLimits]  = useState<Record<string, { storage_limit_gb: number | null }>>({})
+  const [isPro, setIsPro] = useState(false)
+
+  useEffect(() => {
+    if (!isLoaded || !user) return
+    async function loadPlan() {
+      try {
+        const [mR, aR, tR] = await Promise.all([
+          fetch('/api/catalog/models').catch(() => null),
+          fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
+          fetch(`${API}/account/tier-limits`, { headers: { 'x-clerk-id': user!.id } }).catch(() => null),
+        ])
+        const [mD, aD, tD] = await Promise.all([
+          (mR?.ok ? mR.json().catch(() => []) : [])   as { is_free: boolean; has_access: boolean }[],
+          (aR?.ok ? aR.json().catch(() => null) : null) as { account_plan: string; storage_bytes: number } | null,
+          (tR?.ok ? tR.json().catch(() => ({ tiers: [] })) : { tiers: [] }) as { tiers: { tier: string; storage_limit_gb: number | null }[] },
+        ])
+        setIsPro(Array.isArray(mD) && mD.some(m => !m.is_free && m.has_access))
+        setAccountInfo(aD)
+        const limitsMap: Record<string, { storage_limit_gb: number | null }> = {}
+        ;(tD.tiers || []).forEach(t => { limitsMap[t.tier] = { storage_limit_gb: t.storage_limit_gb } })
+        setTierLimits(limitsMap)
+      } catch (e) { console.error(e) }
+    }
+    loadPlan()
+  }, [isLoaded, user, API])
+
+  const planTier = accountInfo?.account_plan === 'custom' ? 'custom' : (isPro ? 'active' : 'basic')
+  const planStorageLimitGb = tierLimits[planTier]?.storage_limit_gb ?? null
+  const planStorageUsedGb  = accountInfo ? accountInfo.storage_bytes / 1e9 : null
 
   const fetchData = useCallback(async () => {
     if (!isLoaded || !user) { setLoading(false); return }
@@ -183,16 +251,28 @@ export default function ImagesPage() {
       file: f, progress: 0, status: 'waiting', message: 'Waiting...',
     }))
     setUploads(prev => [...prev, ...items])
+
+    // Reject oversized rasters before spending minutes uploading them —
+    // same capacity formula the ingest pipeline enforces server-side.
+    const queue: UploadItem[] = []
+    for (const item of items) {
+      const check = await checkRasterCapacity(item.file)
+      if (!check.ok) {
+        setUploads(prev => prev.map(u => u.uid === item.uid ? { ...u, status: 'error', message: check.message! } : u))
+        continue
+      }
+      queue.push(item)
+    }
+
     // Upload up to 3 at a time — enough parallelism without saturating browser connections
     const CONCURRENCY = 3
-    const queue = [...items]
     async function worker() {
       while (queue.length) {
         const item = queue.shift()!
         await uploadSingle(item)
       }
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker))
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker))
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -370,6 +450,19 @@ export default function ImagesPage() {
         </button>
         <input ref={fileRef} type="file" accept=".tif,.tiff,.geotiff" multiple className="hidden" onChange={handleFiles} />
       </div>
+
+      {accountInfo && (
+        <div className="mb-6 flex items-center gap-2 text-xs text-gray-400">
+          <span>
+            Plan {planTier === 'custom' ? 'Custom' : planTier === 'active' ? 'Active' : 'Basic'} —{' '}
+            {planStorageUsedGb !== null ? planStorageUsedGb.toFixed(1) : '–'} GB usados
+            {planStorageLimitGb !== null ? ` de ${planStorageLimitGb} GB` : ' (sin límite)'}
+          </span>
+          {planStorageLimitGb !== null && planStorageUsedGb !== null && planStorageUsedGb / planStorageLimitGb > 0.9 && (
+            <span className="text-[#96814A] bg-[#FBF6EA] rounded-full px-2 py-0.5">Cerca del límite</span>
+          )}
+        </div>
+      )}
 
       {/* Upload progress — one row per file */}
       {uploads.length > 0 && (
