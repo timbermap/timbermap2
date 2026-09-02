@@ -372,34 +372,60 @@ def preview_vector(vector_id: str, clerk_id: str):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        cur.execute(f'SELECT GeometryType(geometry) AS gtype, count(*) AS n FROM vectors."{table}" GROUP BY 1 ORDER BY 2 DESC LIMIT 1')
+        gtype_row = cur.fetchone()
+        is_point = bool(gtype_row) and gtype_row["gtype"] in ("POINT", "MULTIPOINT")
+        n_rows = int(gtype_row["n"]) if gtype_row else 0
+
         cur.execute(f"""
             SELECT
-                ST_AsSVG(ST_Transform(ST_Collect(geometry), 4326), 0, 4) AS path,
                 ST_XMin(ST_Extent(ST_Transform(geometry, 4326))) AS minx,
                 ST_YMin(ST_Extent(ST_Transform(geometry, 4326))) AS miny,
                 ST_XMax(ST_Extent(ST_Transform(geometry, 4326))) AS maxx,
                 ST_YMax(ST_Extent(ST_Transform(geometry, 4326))) AS maxy
             FROM vectors."{table}"
         """)
+        ext = cur.fetchone()
+        if not ext or ext["minx"] is None:
+            raise HTTPException(status_code=404, detail="No geometry")
+        minx, miny, maxx, maxy = float(ext["minx"]), float(ext["miny"]), float(ext["maxx"]), float(ext["maxy"])
+        w = maxx - minx
+        h = maxy - miny
+        # Make square with padding to center smaller dimension
+        size = max(w, h) or 0.0001
+        pad  = size * 0.10
+        cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+        half = size / 2 + pad
+        sw = size * 0.006
+
+        # ST_AsSVG has no representation for POINT/MULTIPOINT as a <path d>
+        # (it emits raw cx/cy fragments meant for <circle>) — buffer points
+        # into small circles instead. Huge point clouds are randomly sampled
+        # for the thumbnail; only the preview is approximate.
+        if is_point:
+            src = (
+                f'(SELECT geometry FROM vectors."{table}" ORDER BY random() LIMIT 2000) g'
+                if n_rows > 2000 else f'vectors."{table}" g'
+            )
+            geom_sql = f"ST_Buffer(ST_Transform(g.geometry, 4326), {size * 0.006}, 4)"
+        else:
+            src = f'vectors."{table}" g'
+            geom_sql = "ST_Transform(g.geometry, 4326)"
+
+        cur.execute(f"""
+            SELECT ST_AsSVG(ST_Collect({geom_sql}), 0, 4) AS path
+            FROM {src}
+        """)
         row = cur.fetchone()
     finally:
         cur.close(); conn.close()
     if not row or not row["path"]:
         raise HTTPException(status_code=404, detail="No geometry")
-    minx, miny, maxx, maxy = float(row["minx"]), float(row["miny"]), float(row["maxx"]), float(row["maxy"])
-    w = maxx - minx
-    h = maxy - miny
-    # Make square with padding to center smaller dimension
-    size = max(w, h)
-    pad  = size * 0.10
-    cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
-    half = size / 2 + pad
     # ST_AsSVG flips Y (SVG Y↓, geo Y↑) — viewBox must account for that
     vb_x  = cx - half
     vb_y  = -(cy + half)   # negate because ST_AsSVG negates Y
     vb_w  = half * 2
     vb_h  = half * 2
-    sw = size * 0.006
     # ST_AsSVG joins the paths of a heterogeneous collection (multiple
     # features) with ";" — valid only inside <animate values="...">, not as
     # a single <path d="..."> value. Split into one <path> per sub-geometry.
