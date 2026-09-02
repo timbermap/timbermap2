@@ -604,7 +604,11 @@ def admin_reprocess_image(image_id: str, _: str = Depends(require_superadmin)):
     """Re-enqueue raster ingest for a stuck/failed image."""
     from tasks import enqueue_raster_ingest
     conn = database.get_conn(); cur = conn.cursor()
-    cur.execute("SELECT id, filename, gcs_path, owner_id FROM images WHERE id=%s", (image_id,))
+    cur.execute("""
+        SELECT i.id, i.filename, i.gcs_path, i.owner_id, u.clerk_id
+        FROM images i JOIN users u ON u.id = i.owner_id
+        WHERE i.id=%s
+    """, (image_id,))
     img = cur.fetchone()
     if not img: raise HTTPException(404, "Image not found")
     # Find or create the ingest job
@@ -624,7 +628,7 @@ def admin_reprocess_image(image_id: str, _: str = Depends(require_superadmin)):
         job_id = str(cur.fetchone()["id"])
     cur.execute("UPDATE images SET status='processing' WHERE id=%s", (image_id,))
     conn.commit(); cur.close(); conn.close()
-    enqueue_raster_ingest(job_id=job_id, image_id=image_id, gcs_path=img["gcs_path"], filename=img["filename"])
+    enqueue_raster_ingest(job_id=job_id, image_id=image_id, gcs_path=img["gcs_path"], filename=img["filename"], clerk_id=img["clerk_id"])
     return {"reprocessing": True, "image_id": image_id, "job_id": job_id}
 
 
