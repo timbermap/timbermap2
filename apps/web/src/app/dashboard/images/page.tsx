@@ -442,12 +442,23 @@ export default function ImagesPage() {
       </div>
 
       {accountInfo && (
-        <div className="mb-6 flex items-center gap-2 text-xs text-gray-400">
-          <span>
+        <div className="mb-6 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+          <span className="flex-shrink-0">
             Plan {planTier === 'custom' ? 'Custom' : planTier === 'active' ? 'Active' : 'Basic'} —{' '}
             {planStorageUsedGb !== null ? planStorageUsedGb.toFixed(1) : '–'} GB usados
             {planStorageLimitGb !== null ? ` de ${planStorageLimitGb} GB` : ' (sin límite)'}
           </span>
+          {planStorageLimitGb !== null && planStorageUsedGb !== null && (
+            <>
+              <div className="w-28 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
+                <div className={`h-full rounded-full ${planStorageUsedGb / planStorageLimitGb > 0.9 ? 'bg-red-400' : 'bg-[#6AA8A0]'}`}
+                  style={{ width: `${Math.min(100, (planStorageUsedGb / planStorageLimitGb) * 100)}%` }} />
+              </div>
+              <span className="font-medium text-gray-500 flex-shrink-0">
+                {Math.round((planStorageUsedGb / planStorageLimitGb) * 100)}%
+              </span>
+            </>
+          )}
           {planStorageLimitGb !== null && planStorageUsedGb !== null && planStorageUsedGb / planStorageLimitGb > 0.9 && (
             <span className="text-[#96814A] bg-[#FBF6EA] rounded-full px-2 py-0.5">Cerca del límite</span>
           )}

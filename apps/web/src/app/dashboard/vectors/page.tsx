@@ -62,6 +62,20 @@ export default function VectorsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
+  const [accountInfo, setAccountInfo] = useState<{ account_plan: string; storage_bytes: number; storage_limit_gb: number | null } | null>(null)
+
+  useEffect(() => {
+    if (!isLoaded || !user) return
+    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.ok ? r.json() : null)
+      .then(setAccountInfo)
+      .catch(() => {})
+  }, [isLoaded, user, API])
+
+  const planTier = accountInfo?.account_plan || 'basic'
+  const planStorageLimitGb = accountInfo?.storage_limit_gb ?? null
+  const planStorageUsedGb  = accountInfo ? accountInfo.storage_bytes / 1e9 : null
+
   const fetchData = useCallback(async () => {
     if (!isLoaded || !user) { setLoading(false); return }
     try {
@@ -352,6 +366,30 @@ export default function VectorsPage() {
         </button>
         <input ref={fileRef} type="file" accept=".zip" multiple className="hidden" onChange={handleFiles} />
       </div>
+
+      {accountInfo && (
+        <div className="mb-6 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+          <span className="flex-shrink-0">
+            Plan {planTier === 'custom' ? 'Custom' : planTier === 'active' ? 'Active' : 'Basic'} —{' '}
+            {planStorageUsedGb !== null ? planStorageUsedGb.toFixed(1) : '–'} GB usados
+            {planStorageLimitGb !== null ? ` de ${planStorageLimitGb} GB` : ' (sin límite)'}
+          </span>
+          {planStorageLimitGb !== null && planStorageUsedGb !== null && (
+            <>
+              <div className="w-28 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
+                <div className={`h-full rounded-full ${planStorageUsedGb / planStorageLimitGb > 0.9 ? 'bg-red-400' : 'bg-[#6AA8A0]'}`}
+                  style={{ width: `${Math.min(100, (planStorageUsedGb / planStorageLimitGb) * 100)}%` }} />
+              </div>
+              <span className="font-medium text-gray-500 flex-shrink-0">
+                {Math.round((planStorageUsedGb / planStorageLimitGb) * 100)}%
+              </span>
+            </>
+          )}
+          {planStorageLimitGb !== null && planStorageUsedGb !== null && planStorageUsedGb / planStorageLimitGb > 0.9 && (
+            <span className="text-[#96814A] bg-[#FBF6EA] rounded-full px-2 py-0.5">Cerca del límite</span>
+          )}
+        </div>
+      )}
 
       {/* Instructions */}
       <div className="mb-5 bg-[#EEF7F6] border border-[#A0CECC] rounded-2xl p-4">
