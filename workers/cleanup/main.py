@@ -126,6 +126,7 @@ def _delete_one_image(image_id: str, owner_id, cur):
     img_row = cur.fetchone()
     _delete_jobs_for("image_id", str(image_id), clerk_id, cur)
     delete_gcs_blob(f"users/{clerk_id}/cogs/{image_id}.tif")
+    delete_gcs_blob(f"users/{clerk_id}/cogs_display/{image_id}.tif")
     delete_gcs_blob(f"users/{clerk_id}/thumbnails/{image_id}.jpg")
     if img_row and img_row["gcs_path"]:
         delete_gcs_blob(img_row["gcs_path"])
