@@ -301,6 +301,8 @@ function ModelCard({
   )
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function CatalogPage() {
   const { user } = useUser()
@@ -312,6 +314,15 @@ export default function CatalogPage() {
   const [contactOpen, setContactOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [tier, setTier] = useState<'all' | 'free' | 'pro'>('all')
+  const [accountPlan, setAccountPlan] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.account_plan) setAccountPlan(d.account_plan) })
+      .catch(() => {})
+  }, [user])
 
   async function load() {
     if (!user) return
@@ -441,91 +452,92 @@ export default function CatalogPage() {
         </div>
       )}
 
-      <div className="space-y-8">
-
-        {/* ── PRO section — shown first for signed-in users ───────────────── */}
-        {tier !== 'free' && (pro.length > 0 || !q) && (
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
-                Pro
-              </span>
-              <span className="text-xs text-gray-400 font-medium">Advanced models</span>
+      {(() => {
+        const proSection = tier !== 'free' && (pro.length > 0 || !q) && (
+          <div key="pro">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
+                  Pro
+                </span>
+                <span className="text-xs text-gray-400 font-medium">Advanced models</span>
+              </div>
+              {proActive > 0 && (
+                <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                  {proActive} active
+                </span>
+              )}
+              <div className="flex-1 h-px bg-gray-100"/>
             </div>
-            {proActive > 0 && (
-              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
-                {proActive} active
-              </span>
+
+            {pro.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+                <p className="text-gray-400 text-sm">No pro models available yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pro.map(m => (
+                  <ModelCard
+                    key={m.id}
+                    model={m}
+                    onActivate={() => activateFree(m)}
+                    onRequestUpgrade={() => setUpgradeModel(m)}
+                    onToggleVisibility={() => toggleVisibility(m)}
+                    activating={activating === m.id}
+                    toggling={toggling === m.id}
+                  />
+                ))}
+              </div>
             )}
-            <div className="flex-1 h-px bg-gray-100"/>
           </div>
+        )
 
-          {pro.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-              <p className="text-gray-400 text-sm">No pro models available yet.</p>
+        const freeSection = tier !== 'pro' && (free.length > 0 || !q) && (
+          <div key="free">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
+                  Free
+                </span>
+                <span className="text-xs text-gray-400 font-medium">All plans</span>
+              </div>
+              {freeActive > 0 && (
+                <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                  {freeActive} active
+                </span>
+              )}
+              <div className="flex-1 h-px bg-gray-100"/>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pro.map(m => (
-                <ModelCard
-                  key={m.id}
-                  model={m}
-                  onActivate={() => activateFree(m)}
-                  onRequestUpgrade={() => setUpgradeModel(m)}
-                  onToggleVisibility={() => toggleVisibility(m)}
-                  activating={activating === m.id}
-                  toggling={toggling === m.id}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        )}
 
-        {/* ── FREE section — below Pro ────────────────────────────────────── */}
-        {tier !== 'pro' && (free.length > 0 || !q) && (
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
-                Free
-              </span>
-              <span className="text-xs text-gray-400 font-medium">All plans</span>
-            </div>
-            {freeActive > 0 && (
-              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
-                {freeActive} active
-              </span>
+            {free.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+                <p className="text-gray-400 text-sm">No free models available yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {free.map(m => (
+                  <ModelCard
+                    key={m.id}
+                    model={m}
+                    onActivate={() => activateFree(m)}
+                    onRequestUpgrade={() => setUpgradeModel(m)}
+                    onToggleVisibility={() => toggleVisibility(m)}
+                    activating={activating === m.id}
+                    toggling={toggling === m.id}
+                  />
+                ))}
+              </div>
             )}
-            <div className="flex-1 h-px bg-gray-100"/>
           </div>
+        )
 
-          {free.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-              <p className="text-gray-400 text-sm">No free models available yet.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {free.map(m => (
-                <ModelCard
-                  key={m.id}
-                  model={m}
-                  onActivate={() => activateFree(m)}
-                  onRequestUpgrade={() => setUpgradeModel(m)}
-                  onToggleVisibility={() => toggleVisibility(m)}
-                  activating={activating === m.id}
-                  toggling={toggling === m.id}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        )}
-
-      </div>
+        // Basic accounts see free models first (what they can actually use);
+        // Pro/Custom see their paid models first.
+        const ordered = accountPlan === 'basic' ? [freeSection, proSection] : [proSection, freeSection]
+        return <div className="space-y-8">{ordered}</div>
+      })()}
 
       {/* Custom model CTA */}
       <div className="mt-8 p-5 rounded-2xl border border-dashed border-[#A0CECC] bg-[#F4F9F9] flex items-center justify-between gap-4">
