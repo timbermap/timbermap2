@@ -138,6 +138,7 @@ export default function Landing() {
 
           <div className="tm-hero-auth">
             <SignUp
+              routing="hash"
               forceRedirectUrl="/dashboard"
               signInUrl="/sign-in"
               appearance={{
