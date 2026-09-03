@@ -33,20 +33,28 @@ const OUTPUT_DESCRIPTIONS: Record<string, string> = {
 }
 
 function ContactModal({ modelName, onClose }: { modelName: string; onClose: () => void }) {
+  const { user } = useUser()
+  const [name, setName] = useState(user?.fullName || '')
+  const [email, setEmail] = useState(user?.primaryEmailAddress?.emailAddress || '')
   const [msg, setMsg] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSending(true)
+    setError('')
     try {
-      await fetch('/api/catalog/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `[Re: ${modelName}]\n\n${msg}` }),
-      })
+      const formData = new FormData()
+      formData.set('name', name)
+      formData.set('email', email)
+      formData.set('message', `[Re: ${modelName}]\n\n${msg}`)
+      const r = await fetch('/api/contact', { method: 'POST', body: formData })
+      if (!r.ok) throw new Error()
       setSent(true)
+    } catch {
+      setError('Something went wrong — please try again.')
     } finally { setSending(false) }
   }
 
@@ -69,9 +77,18 @@ function ContactModal({ modelName, onClose }: { modelName: string; onClose: () =
             <p className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide mb-1">Question about {modelName}</p>
             <h3 className="font-semibold text-gray-900 text-lg mb-4">Ask us anything</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" required value={name} onChange={e => setName(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-[#6AA8A0] focus:ring-1 focus:ring-[#6AA8A0]"
+                  placeholder="Your name"/>
+                <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-[#6AA8A0] focus:ring-1 focus:ring-[#6AA8A0]"
+                  placeholder="Your email"/>
+              </div>
               <textarea rows={4} required value={msg} onChange={e => setMsg(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 resize-none focus:outline-none focus:border-[#6AA8A0] focus:ring-1 focus:ring-[#6AA8A0]"
                 placeholder="What would you like to know?"/>
+              {error && <p className="text-xs text-red-500">{error}</p>}
               <button type="submit" disabled={sending}
                 className="cursor-pointer w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
                 {sending ? 'Sending...' : 'Send →'}
