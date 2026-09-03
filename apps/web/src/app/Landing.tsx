@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { SignInButton, SignUpButton } from '@clerk/nextjs'
+import { SignInButton, SignUp } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
 interface PublicModel {
@@ -115,26 +115,45 @@ export default function Landing() {
           </div>
           <div className="tm-hero-overlay" />
         </div>
-        <div className="tm-hero-content">
-          <p className="tm-eyebrow">Precision Forestry AI</p>
-          <h1 className="tm-hero-title">
-            AI-powered<br/>
-            precision<br/>
-            <em>forestry</em>
-          </h1>
-          <p className="tm-hero-sub">
-            Upload drone or aircraft imagery of your forest plantation. Get AI-powered results — tree crown counts, inter-row spacing, fault density maps — in under an hour.
-          </p>
-          <div className="tm-hero-ctas">
-            <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-              <button className="tm-btn-primary">Get started →</button>
-            </SignUpButton>
-            <a href="#contact" className="tm-btn-outline">Talk to us</a>
+        <div className="tm-hero-inner">
+          <div className="tm-hero-content">
+            <p className="tm-eyebrow">Precision Forestry AI</p>
+            <h1 className="tm-hero-title">
+              AI-powered<br/>
+              precision<br/>
+              <em>forestry</em>
+            </h1>
+            <p className="tm-hero-sub">
+              Upload drone or aircraft imagery of your forest plantation. Get AI-powered results — tree crown counts, inter-row spacing, fault density maps — in under an hour.
+            </p>
+            <div className="tm-hero-ctas">
+              <a href="#contact" className="tm-btn-outline">Talk to us</a>
+            </div>
+            <div className="tm-hero-stats">
+              <div><strong>3</strong><span>AI models</span></div>
+              <div><strong>&lt;1h</strong><span>Processing</span></div>
+              <div><strong>cm</strong><span>Resolution</span></div>
+            </div>
           </div>
-          <div className="tm-hero-stats">
-            <div><strong>3</strong><span>AI models</span></div>
-            <div><strong>&lt;1h</strong><span>Processing</span></div>
-            <div><strong>cm</strong><span>Resolution</span></div>
+
+          <div className="tm-hero-auth">
+            <p className="tm-hero-auth-eyebrow">Get started</p>
+            <h2 className="tm-hero-auth-title">Create your account</h2>
+            <SignUp
+              forceRedirectUrl="/dashboard"
+              signInUrl="/sign-in"
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  card: 'shadow-none border-0 w-full p-0 bg-transparent',
+                  headerTitle: 'hidden',
+                  headerSubtitle: 'hidden',
+                  footer: 'bg-transparent',
+                  formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white',
+                  footerActionLink: 'text-[#2C5F45] hover:text-[#3D7A5A]',
+                },
+              }}
+            />
           </div>
         </div>
       </section>
@@ -327,7 +346,11 @@ export default function Landing() {
         .tm-slide-3 { animation-delay:12s; }
         @keyframes slide-fade { 0%{opacity:0} 5%{opacity:1} 28%{opacity:1} 33%{opacity:0} 100%{opacity:0} }
         .tm-hero-overlay { position:absolute;inset:0;background:linear-gradient(135deg,rgba(20,35,32,.75) 0%,rgba(20,35,32,.50) 60%,rgba(40,90,84,.15) 100%); }
-        .tm-hero-content { position:relative;z-index:1;max-width:640px;isolation:auto; }
+        .tm-hero-inner { position:relative;z-index:1;width:100%;max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:3.5rem; }
+        .tm-hero-content { max-width:600px;flex:1 1 480px; }
+        .tm-hero-auth { background:#fff;border-radius:20px;padding:2.5rem 2.25rem 2rem;width:380px;flex-shrink:0;box-shadow:0 30px 70px -20px rgba(0,0,0,.45); }
+        .tm-hero-auth-eyebrow { font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:#6AA8A0;margin-bottom:.4rem; }
+        .tm-hero-auth-title { font-size:1.4rem;font-weight:600;color:#1A2624;margin-bottom:1.5rem;letter-spacing:-.01em; }
         .tm-eyebrow { font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.12em;color:#6AA8A0;margin-bottom:1.25rem; }
         .tm-hero-title { font-size:clamp(2.75rem,6vw,5rem);font-weight:300;line-height:1.0;letter-spacing:-.02em;color:#F0F7F6;margin-bottom:1.5rem; }
         .tm-hero-title em { font-style:normal;color:#6AA8A0;font-weight:700; }
@@ -411,8 +434,10 @@ export default function Landing() {
           .tm-nav-btn { display:none; }
           .tm-nav-btn-mobile { display:block; }
           .tm-hero { text-align:center; }
+          .tm-hero-inner { flex-direction:column; }
           .tm-hero-sub,.tm-hero-content { margin-left:auto;margin-right:auto; }
           .tm-hero-ctas,.tm-hero-stats { justify-content:center; }
+          .tm-hero-auth { width:100%;max-width:380px;text-align:left; }
           .tm-contact-inner { grid-template-columns:1fr;gap:3rem; }
         }
         @media(max-width:600px) {
