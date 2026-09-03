@@ -43,6 +43,19 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   // second right after creating an org), which was retriggering load() in
   // a tight loop and made the UI look permanently stuck on "Loading team".
   useEffect(() => { if (organization && isLoaded && user) load() }, [organization?.id, isLoaded, user, load])
+  // Belt-and-suspenders: if the webhook is slow, keep polling for a bit
+  // instead of leaving the user stuck on the "setting up" screen below
+  // until they manually refresh.
+  useEffect(() => {
+    if (!organization || !info || info.is_organization) return
+    let tries = 0
+    const t = setInterval(() => {
+      tries += 1
+      load()
+      if (tries >= 8) clearInterval(t)
+    }, 1500)
+    return () => clearInterval(t)
+  }, [organization?.id, info, load])
 
   async function toggleModel(teammateClerkId: string, modelId: string, hasAccess: boolean) {
     const key = `${teammateClerkId}:${modelId}`
@@ -58,6 +71,18 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
     return (
       <div className="flex items-center gap-2 text-gray-400 py-16 justify-center text-sm">
         <SpinIcon />Loading team...
+      </div>
+    )
+  }
+
+  // Org was just created (Clerk's own client state already knows about it)
+  // but our DB hasn't caught up yet — show a brief "setting up" state
+  // instead of leaving the CreateOrganization widget rendered with nothing
+  // left to show, which is what read as "the form went blank."
+  if (organization && (!info || !info.is_organization)) {
+    return (
+      <div className="flex items-center gap-2 text-gray-400 py-16 justify-center text-sm">
+        <SpinIcon />Setting up your team...
       </div>
     )
   }
