@@ -372,7 +372,7 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
                 <td className="px-4 py-3 text-xs text-gray-500">{m.job_count}</td>
                 <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.artifact_count >= 3 ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-amber-50 text-amber-600'}`}>
-                    {m.artifact_count}/3
+                    {m.artifact_count >= 3 ? `${m.artifact_count} artifacts` : `${m.artifact_count}/3`}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -483,6 +483,8 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
                       <option value="weights">weights (.h5)</option>
                       <option value="means">means (.npy)</option>
                       <option value="stds">stds (.npy)</option>
+                      <option value="sample_image_small">sample image — small (catalog thumbnail)</option>
+                      <option value="sample_image_large">sample image — large (model detail page)</option>
                     </select>
                     <button onClick={() => uploadKey && fileRef.current?.click()}
                       disabled={!uploadKey || uploading}
