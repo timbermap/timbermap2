@@ -377,43 +377,43 @@ export default function CatalogPage() {
         </Link>
       </div>
 
-      {/* Search bar */}
-      <div className="relative mb-7">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-          className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-          <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd"/>
-        </svg>
-        <input
-          type="text"
-          placeholder="Search models by name, type or description..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all placeholder-gray-400"
-        />
-        {search && (
-          <button onClick={() => setSearch('')}
-            className="cursor-pointer absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* Tier filter */}
-      <div className="flex gap-1.5 bg-white border border-gray-200 rounded-xl p-1 w-fit mb-7">
-        {([
-          { key: 'all',  label: `All (${models.length})` },
-          { key: 'free', label: `Free (${models.filter(m => m.is_free).length})` },
-          { key: 'pro',  label: `Pro (${models.filter(m => !m.is_free).length})` },
-        ] as const).map(f => (
-          <button key={f.key} onClick={() => setTier(f.key)}
-            className={`cursor-pointer px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-              tier === f.key ? 'bg-[#3D7A72] text-white' : 'text-gray-500 hover:bg-gray-50'
-            }`}>
-            {f.label}
-          </button>
-        ))}
+      {/* Search + tier filter */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-7">
+        <div className="relative flex-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+            className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="Search models by name, type or description..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all placeholder-gray-400"
+          />
+          {search && (
+            <button onClick={() => setSearch('')}
+              className="cursor-pointer absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="flex gap-1.5 bg-white border border-gray-200 rounded-xl p-1">
+          {([
+            { key: 'all',  label: `All (${models.length})` },
+            { key: 'free', label: `Free (${models.filter(m => m.is_free).length})` },
+            { key: 'pro',  label: `Pro (${models.filter(m => !m.is_free).length})` },
+          ] as const).map(f => (
+            <button key={f.key} onClick={() => setTier(f.key)}
+              className={`cursor-pointer px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                tier === f.key ? 'bg-[#3D7A72] text-white' : 'text-gray-500 hover:bg-gray-50'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* No search results */}
@@ -426,48 +426,7 @@ export default function CatalogPage() {
 
       <div className="space-y-8">
 
-        {/* ── FREE section — shown first ──────────────────────────────────── */}
-        {tier !== 'pro' && (free.length > 0 || !q) && (
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
-                Free
-              </span>
-              <span className="text-xs text-gray-400 font-medium">All plans</span>
-            </div>
-            {freeActive > 0 && (
-              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
-                {freeActive} active
-              </span>
-            )}
-            <div className="flex-1 h-px bg-gray-100"/>
-          </div>
-
-          {free.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
-              <p className="text-gray-400 text-sm">No free models available yet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {free.map(m => (
-                <ModelCard
-                  key={m.id}
-                  model={m}
-                  onActivate={() => activateFree(m)}
-                  onRequestUpgrade={() => setUpgradeModel(m)}
-                  onToggleVisibility={() => toggleVisibility(m)}
-                  activating={activating === m.id}
-                  toggling={toggling === m.id}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        )}
-
-        {/* ── PRO section — de-emphasized, below Free ─────────────────────── */}
+        {/* ── PRO section — shown first for signed-in users ───────────────── */}
         {tier !== 'free' && (pro.length > 0 || !q) && (
         <div>
           <div className="flex items-center gap-3 mb-3">
@@ -493,6 +452,47 @@ export default function CatalogPage() {
           ) : (
             <div className="space-y-2">
               {pro.map(m => (
+                <ModelCard
+                  key={m.id}
+                  model={m}
+                  onActivate={() => activateFree(m)}
+                  onRequestUpgrade={() => setUpgradeModel(m)}
+                  onToggleVisibility={() => toggleVisibility(m)}
+                  activating={activating === m.id}
+                  toggling={toggling === m.id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* ── FREE section — below Pro ────────────────────────────────────── */}
+        {tier !== 'pro' && (free.length > 0 || !q) && (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/50">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
+                Free
+              </span>
+              <span className="text-xs text-gray-400 font-medium">All plans</span>
+            </div>
+            {freeActive > 0 && (
+              <span className="text-xs text-[#3D7A72] font-medium bg-[#EEF7F6] px-2 py-0.5 rounded-full">
+                {freeActive} active
+              </span>
+            )}
+            <div className="flex-1 h-px bg-gray-100"/>
+          </div>
+
+          {free.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-8 text-center">
+              <p className="text-gray-400 text-sm">No free models available yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {free.map(m => (
                 <ModelCard
                   key={m.id}
                   model={m}

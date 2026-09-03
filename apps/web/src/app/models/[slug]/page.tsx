@@ -32,10 +32,63 @@ const OUTPUT_DESCRIPTIONS: Record<string, string> = {
   csv: 'Tabular statistics as a CSV file.',
 }
 
+function ContactModal({ modelName, onClose }: { modelName: string; onClose: () => void }) {
+  const [msg, setMsg] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSending(true)
+    try {
+      await fetch('/api/catalog/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `[Re: ${modelName}]\n\n${msg}` }),
+      })
+      setSent(true)
+    } finally { setSending(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 relative shadow-xl">
+        <button onClick={onClose} className="cursor-pointer absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        {sent ? (
+          <div className="text-center py-6">
+            <div className="w-12 h-12 rounded-full bg-[#EEF7F6] flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-[#3D7A72]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <p className="font-semibold text-gray-800">Message sent!</p>
+            <p className="text-sm text-gray-400 mt-1">We&apos;ll get back to you shortly.</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide mb-1">Question about {modelName}</p>
+            <h3 className="font-semibold text-gray-900 text-lg mb-4">Ask us anything</h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <textarea rows={4} required value={msg} onChange={e => setMsg(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 resize-none focus:outline-none focus:border-[#6AA8A0] focus:ring-1 focus:ring-[#6AA8A0]"
+                placeholder="What would you like to know?"/>
+              <button type="submit" disabled={sending}
+                className="cursor-pointer w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                {sending ? 'Sending...' : 'Send →'}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ModelDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const { isSignedIn, isLoaded } = useUser()
   const [model, setModel] = useState<PublicModel | null | 'notfound'>(null)
+  const [contactOpen, setContactOpen] = useState(false)
 
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
@@ -132,16 +185,33 @@ export default function ModelDetailPage() {
             </div>
           </div>
 
+          {contactOpen && <ContactModal modelName={model.name} onClose={() => setContactOpen(false)} />}
+
           <div className="bg-[#F4F9F9] border border-dashed border-[#A0CECC] rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <p className="text-sm font-semibold text-[#1A2624] mb-0.5">Ready to run this on your own imagery?</p>
-              <p className="text-sm text-gray-500">Sign in to upload an image and get results in minutes.</p>
-            </div>
-            <SignInButton mode="modal" forceRedirectUrl="/dashboard/models">
-              <button className="flex-shrink-0 inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer">
-                Sign in →
-              </button>
-            </SignInButton>
+            {isSignedIn ? (
+              <>
+                <div>
+                  <p className="text-sm font-semibold text-[#1A2624] mb-0.5">Have more questions about this model?</p>
+                  <p className="text-sm text-gray-500">We&apos;re happy to walk you through it before you run it.</p>
+                </div>
+                <button onClick={() => setContactOpen(true)}
+                  className="flex-shrink-0 inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer">
+                  Contact us →
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm font-semibold text-[#1A2624] mb-0.5">Ready to run this on your own imagery?</p>
+                  <p className="text-sm text-gray-500">Sign in to upload an image and get results in minutes.</p>
+                </div>
+                <SignInButton mode="modal" forceRedirectUrl="/dashboard/models">
+                  <button className="flex-shrink-0 inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer">
+                    Sign in →
+                  </button>
+                </SignInButton>
+              </>
+            )}
           </div>
         </div>
       )}
