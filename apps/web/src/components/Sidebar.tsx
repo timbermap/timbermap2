@@ -22,6 +22,7 @@ export default function Sidebar() {
   const { user, isLoaded } = useUser()
   const [collapsed, setCollapsed]     = useState(true)
   const [isSuperadmin, setIsSuperadmin] = useState(false)
+  const [accountPlan, setAccountPlan] = useState<string | null>(null)
 
   useEffect(() => {
     const stored = localStorage.getItem('sidebar-collapsed')
@@ -34,7 +35,15 @@ export default function Sidebar() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.is_superadmin) setIsSuperadmin(true) })
       .catch(() => {})
+    fetch(`${API}/account/me`, { headers: { 'x-clerk-id': user.id } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.account_plan) setAccountPlan(d.account_plan) })
+      .catch(() => {})
   }, [isLoaded, user])
+
+  // Teams are a paid-plan perk (create_team already blocks 'basic' on the
+  // backend) — don't show the tab at all for a plain Basic account.
+  const showTeam = accountPlan !== 'basic'
 
   function toggle() {
     const next = !collapsed
@@ -116,17 +125,19 @@ export default function Sidebar() {
                   />
                 )}
               </UserButton.MenuItems>
-              <UserButton.UserProfilePage
-                label="Team"
-                url="team"
-                labelIcon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-                    <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3 15.5C3 13.567 5.239 12 8 12c.34 0 .672.024.994.07C8.373 12.85 8 13.86 8 15v.5A1.5 1.5 0 0 0 9.5 17h-5A1.5 1.5 0 0 1 3 15.5ZM14 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>
-                    <path d="M17 15.5A1.5 1.5 0 0 1 15.5 17h-5A1.5 1.5 0 0 1 9 15.5v-.657C9 12.686 11.239 11 14 11s5 1.686 5 3.843v.657Z"/>
-                  </svg>
-                }>
-                <TeamPage compact />
-              </UserButton.UserProfilePage>
+              {showTeam && (
+                <UserButton.UserProfilePage
+                  label="Team"
+                  url="team"
+                  labelIcon={
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+                      <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM3 15.5C3 13.567 5.239 12 8 12c.34 0 .672.024.994.07C8.373 12.85 8 13.86 8 15v.5A1.5 1.5 0 0 0 9.5 17h-5A1.5 1.5 0 0 1 3 15.5ZM14 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>
+                      <path d="M17 15.5A1.5 1.5 0 0 1 15.5 17h-5A1.5 1.5 0 0 1 9 15.5v-.657C9 12.686 11.239 11 14 11s5 1.686 5 3.843v.657Z"/>
+                    </svg>
+                  }>
+                  <TeamPage compact />
+                </UserButton.UserProfilePage>
+              )}
               <UserButton.UserProfilePage
                 label="Subscription"
                 url="subscription"
