@@ -27,6 +27,21 @@ def current_user(x_clerk_id: str = Header(..., alias="x-clerk-id")) -> str:
     return x_clerk_id
 
 
+class EnsureAccountRequest(BaseModel):
+    email: str
+    username: str
+
+
+@router.post("/ensure")
+def ensure_account(body: EnsureAccountRequest, x_clerk_id: str = Header(..., alias="x-clerk-id")):
+    """Called once on dashboard load. Provisions the users row (+ personal
+    account, + free-model grants) if the Clerk webhook hasn't landed yet —
+    without this, a brand-new user 404s on anything besides /upload/signed-url,
+    the only other endpoint that self-heals via ensure_user()."""
+    database.ensure_user(x_clerk_id, body.email, body.username)
+    return {"ok": True}
+
+
 @router.get("/tier-limits")
 def get_tier_limits_public(clerk_id: str = Depends(current_user)):
     """Read-only for any signed-in user — powers the "your limits" panel."""
