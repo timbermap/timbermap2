@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useUser, SignInButton } from '@clerk/nextjs'
 
@@ -13,8 +13,8 @@ export default function TeamInvitePage() {
   const router = useRouter()
   const { user, isSignedIn, isLoaded } = useUser()
   const [invite, setInvite] = useState<Invite | null | 'notfound'>(null)
-  const [accepting, setAccepting] = useState(false)
   const [error, setError] = useState('')
+  const attempted = useRef(false)
 
   const loadInvite = useCallback(() => {
     fetch(`${API}/account/team/invite/${token}`)
@@ -25,9 +25,9 @@ export default function TeamInvitePage() {
 
   useEffect(() => { loadInvite() }, [loadInvite])
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async () => {
     if (!user) return
-    setAccepting(true); setError('')
+    setError('')
     try {
       const r = await fetch(`${API}/account/team/invite/${token}/accept`, {
         method: 'POST',
@@ -37,9 +37,20 @@ export default function TeamInvitePage() {
       router.push('/dashboard')
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e))
-      setAccepting(false)
+      attempted.current = false
     }
-  }
+  }, [user, token, router])
+
+  // Auto-accept the moment we know who's signed in — including right after
+  // bouncing back from an SSO provider — so there's no extra manual click
+  // needed on top of the unavoidable OAuth redirect.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !invite || invite === 'notfound') return
+    if (invite.status !== 'pending' || new Date(invite.expires_at) < new Date()) return
+    if (attempted.current) return
+    attempted.current = true
+    handleAccept()
+  }, [isLoaded, isSignedIn, invite, handleAccept])
 
   return (
     <div className="min-h-screen bg-[#F7F8F6] flex flex-col items-center justify-center px-6 text-center">
@@ -77,15 +88,24 @@ export default function TeamInvitePage() {
                 </div>
               ) : isSignedIn ? (
                 <>
-                  {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
-                  <button onClick={handleAccept} disabled={accepting}
-                    className="w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50 cursor-pointer">
-                    {accepting ? 'Joining...' : `Accept & join →`}
-                  </button>
+                  {error ? (
+                    <>
+                      <p className="text-xs text-red-500 mb-3">{error}</p>
+                      <button onClick={() => { attempted.current = false; handleAccept() }}
+                        className="w-full bg-[#3D7A72] hover:bg-[#2A5750] text-white font-semibold text-sm py-2.5 rounded-xl transition-colors cursor-pointer">
+                        Try again →
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-400 text-sm justify-center py-2">
+                      <span className="w-4 h-4 border-2 border-[#3D7A72] border-t-transparent rounded-full animate-spin" />
+                      Joining {invite.team_name}...
+                    </div>
+                  )}
                   {user?.primaryEmailAddress?.emailAddress !== invite.email && (
                     <p className="text-xs text-amber-600 mt-3">
                       You&apos;re signed in as {user?.primaryEmailAddress?.emailAddress}, not the invited address —
-                      you can still accept, but double check this is right.
+                      joining anyway.
                     </p>
                   )}
                 </>
