@@ -1986,22 +1986,14 @@ export default function AdminPage() {
       .catch(() => setAuthorized(false))
   }, [isLoaded, user, API])
 
-  if (!isLoaded || authorized === null) {
+  useEffect(() => {
+    if (authorized === false) router.replace('/dashboard')
+  }, [authorized, router])
+
+  if (!isLoaded || authorized === null || authorized === false) {
     return (
       <div className="flex items-center gap-2 text-gray-400 py-16 justify-center">
         <SpinIcon />Checking access...
-      </div>
-    )
-  }
-
-  if (!authorized) {
-    return (
-      <div className="max-w-md mx-auto py-16 text-center">
-        <p className="text-gray-500 font-medium">Access denied</p>
-        <p className="text-gray-300 text-sm mt-1">Superadmin privileges required</p>
-        <button onClick={() => router.push('/dashboard')} className="mt-4 text-sm text-[#6AA8A0] hover:underline">
-          Back to dashboard
-        </button>
       </div>
     )
   }

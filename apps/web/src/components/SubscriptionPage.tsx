@@ -11,10 +11,10 @@ type AccountInfo = {
   storage_bytes: number; jobs_this_week: number
 }
 
-const TIER_LABEL: Record<string, string> = { basic: 'Basic', active: 'Active', custom: 'Custom' }
+const TIER_LABEL: Record<string, string> = { basic: 'Basic', pro: 'Pro', custom: 'Custom' }
 const TIER_BADGE: Record<string, string> = {
   basic:  'bg-gray-100 text-gray-500',
-  active: 'bg-[#EEF7F6] text-[#3D7A72] border border-[#A0CECC]/50',
+  pro:    'bg-[#EEF7F6] text-[#3D7A72] border border-[#A0CECC]/50',
   custom: 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]',
 }
 
@@ -115,33 +115,35 @@ export default function SubscriptionPage() {
         )}
       </div>
 
-      {/* Organization */}
-      {account.is_organization ? (
-        <div className="bg-[#EEF7F6] border border-[#A0CECC]/50 rounded-2xl p-5 mb-5">
-          <p className="text-sm font-semibold text-[#2A5750] mb-1">Team account</p>
-          <p className="text-xs text-[#3D7A72] mb-3">Usage above is shared across your whole team.</p>
-          <Link href="/dashboard/team" className="text-xs font-semibold text-[#3D7A72] hover:underline">
-            Manage team →
-          </Link>
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
-          <p className="text-sm font-semibold text-[#1A2624] mb-1">Working alone?</p>
-          <p className="text-xs text-gray-500 mb-3">
-            Create a team to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
-          </p>
-          <Link href="/dashboard/team"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D7A72] hover:underline">
-            Create team →
-          </Link>
-        </div>
+      {/* Organization — teams are a Pro+ perk, not shown to Basic accounts */}
+      {tier !== 'basic' && (
+        account.is_organization ? (
+          <div className="bg-[#EEF7F6] border border-[#A0CECC]/50 rounded-2xl p-5 mb-5">
+            <p className="text-sm font-semibold text-[#2A5750] mb-1">Team account</p>
+            <p className="text-xs text-[#3D7A72] mb-3">Usage above is shared across your whole team.</p>
+            <Link href="/dashboard/team" className="text-xs font-semibold text-[#3D7A72] hover:underline">
+              Manage team →
+            </Link>
+          </div>
+        ) : (
+          <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-5">
+            <p className="text-sm font-semibold text-[#1A2624] mb-1">Working alone?</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Create a team to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
+            </p>
+            <Link href="/dashboard/team"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D7A72] hover:underline">
+              Create team →
+            </Link>
+          </div>
+        )
       )}
 
       {/* Upgrade */}
       {tier !== 'custom' && (
         <div className="bg-[#FBF6EA] border border-[#E6D9AE] rounded-2xl p-5">
           <p className="text-sm font-semibold text-[#7A6839] mb-1">
-            {tier === 'basic' ? 'Upgrade to Active or Custom' : 'Upgrade to Custom'}
+            {tier === 'basic' ? 'Upgrade to Pro or Custom' : 'Upgrade to Custom'}
           </p>
           <p className="text-xs text-[#96814A] mb-4">
             Card payments aren&apos;t live yet — send us a request and we&apos;ll set it up manually and follow up by email.
