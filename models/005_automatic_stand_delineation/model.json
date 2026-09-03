@@ -1,0 +1,10 @@
+{
+  "model_id": null,
+  "name": "Automatic Stand Delineation",
+  "name_es": "Rodalización Automática PL",
+  "slug": "automatic-stand-delineation",
+  "pipeline_type": null,
+  "runner": null,
+  "gcs_weights_prefix": null,
+  "note": "Not yet registered in the DB — drop notebooks/weights/samples in here, then register the model (superadmin or a direct DB insert) once it's ready to wire up. gcs_weights_prefix will be models/{model_id}/ once a model_id exists, matching the other models."
+}

@@ -130,7 +130,7 @@ export default function SubscriptionPage() {
           <p className="text-xs text-gray-500 mb-3">
             Create a team to invite teammates onto this account — everyone keeps their own workspace, usage is pooled together.
           </p>
-          <Link href="/create-organization"
+          <Link href="/dashboard/team"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D7A72] hover:underline">
             Create team →
           </Link>

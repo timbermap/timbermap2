@@ -341,7 +341,7 @@ def superadmin_list_users():
         SELECT
             u.id, u.clerk_id, u.email, u.username, u.is_superadmin, u.created_at,
             u.account_id, u.org_role,
-            a.plan, a.plan_expires_at, a.clerk_org_id,
+            a.plan, a.plan_expires_at, a.name AS team_name,
             (SELECT COUNT(*) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = u.account_id) AS image_count,
             (SELECT COUNT(*) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = u.account_id) AS vector_count,
             (SELECT COUNT(*) FROM jobs    j JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = u.account_id) AS job_count,
@@ -439,7 +439,7 @@ def superadmin_get_user_detail(clerk_id: str):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT u.*, a.plan AS account_plan, a.plan_expires_at, a.clerk_org_id,
+        SELECT u.*, a.plan AS account_plan, a.plan_expires_at, a.name AS team_name,
                a.storage_limit_gb_override, a.weekly_job_limit_override
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
@@ -449,7 +449,7 @@ def superadmin_get_user_detail(clerk_id: str):
         cur.close(); conn.close()
         return None
     user = dict(user)
-    user["is_organization"] = user["clerk_org_id"] is not None
+    user["is_organization"] = user["team_name"] is not None
 
     cur.execute("SELECT storage_limit_gb, weekly_job_limit FROM tier_limits WHERE tier = %s", (user["account_plan"],))
     tier_default = cur.fetchone() or {"storage_limit_gb": None, "weekly_job_limit": None}
@@ -815,13 +815,159 @@ def superadmin_delete_job_output(output_id: str):
     return gcs_path
 
 
+def create_team(clerk_id: str, name: str):
+    """Turns the caller's personal account into a named team and makes them
+    its admin. No-op-safe: fails if they're already on a named team."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.id, u.account_id, a.name AS team_name
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return False, "User not found"
+    if me["team_name"]:
+        cur.close(); conn.close()
+        return False, "Already part of a team"
+    cur.execute("UPDATE accounts SET name = %s WHERE id = %s", (name, me["account_id"]))
+    cur.execute("UPDATE users SET org_role = 'admin' WHERE id = %s", (me["id"],))
+    conn.commit()
+    cur.close(); conn.close()
+    return True, None
+
+
+def rename_team(clerk_id: str, name: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.account_id FROM users u WHERE u.clerk_id = %s AND u.org_role = 'admin'
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return False
+    cur.execute("UPDATE accounts SET name = %s WHERE id = %s", (name, me["account_id"]))
+    conn.commit()
+    cur.close(); conn.close()
+    return True
+
+
+def create_team_invite(clerk_id: str, email: str, token: str, expires_at):
+    """Admin-only. Returns (invite_id, team_name) or (None, error_message)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.id, u.account_id, a.name AS team_name
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s AND u.org_role = 'admin'
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return None, "Only a team admin can invite"
+    cur.execute("""
+        INSERT INTO team_invites (account_id, email, invited_by, token, expires_at)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (me["account_id"], email, me["id"], token, expires_at))
+    invite_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close(); conn.close()
+    return {"invite_id": str(invite_id), "team_name": me["team_name"]}, None
+
+
+def get_team_invite(token: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ti.id, ti.email, ti.status, ti.expires_at, ti.account_id, a.name AS team_name
+        FROM team_invites ti JOIN accounts a ON a.id = ti.account_id
+        WHERE ti.token = %s
+    """, (token,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return dict(row) if row else None
+
+
+def accept_team_invite(clerk_id: str, token: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, account_id, status, expires_at FROM team_invites WHERE token = %s", (token,))
+    invite = cur.fetchone()
+    if not invite:
+        cur.close(); conn.close()
+        return False, "Invite not found"
+    if invite["status"] != "pending":
+        cur.close(); conn.close()
+        return False, "This invite is no longer valid"
+    import datetime
+    if invite["expires_at"] < datetime.datetime.now(datetime.timezone.utc):
+        cur.close(); conn.close()
+        return False, "This invite has expired"
+    cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return False, "User not found"
+    cur.execute(
+        "UPDATE users SET account_id = %s, org_role = 'member' WHERE id = %s",
+        (invite["account_id"], me["id"]),
+    )
+    cur.execute("UPDATE team_invites SET status = 'accepted' WHERE id = %s", (invite["id"],))
+    conn.commit()
+    cur.close(); conn.close()
+    return True, None
+
+
+def revoke_team_invite(clerk_id: str, invite_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM team_invites ti USING users u
+        WHERE ti.id = %s AND ti.account_id = u.account_id
+          AND u.clerk_id = %s AND u.org_role = 'admin'
+    """, (invite_id, clerk_id))
+    ok = cur.rowcount > 0
+    conn.commit()
+    cur.close(); conn.close()
+    return ok
+
+
+def remove_teammate(admin_clerk_id: str, teammate_clerk_id: str):
+    """Admin-only. Removes a teammate and gives them back a personal account."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT account_id, org_role FROM users WHERE clerk_id = %s", (admin_clerk_id,))
+    admin = cur.fetchone()
+    if not admin or admin["org_role"] != "admin":
+        cur.close(); conn.close()
+        return False, "Only a team admin can remove members"
+    cur.execute("SELECT id, account_id FROM users WHERE clerk_id = %s", (teammate_clerk_id,))
+    teammate = cur.fetchone()
+    if not teammate or teammate["account_id"] != admin["account_id"]:
+        cur.close(); conn.close()
+        return False, "That user isn't on your team"
+    cur.execute("INSERT INTO accounts DEFAULT VALUES RETURNING id")
+    new_account_id = cur.fetchone()["id"]
+    cur.execute(
+        "UPDATE users SET account_id = %s, org_role = NULL WHERE id = %s",
+        (new_account_id, teammate["id"]),
+    )
+    conn.commit()
+    cur.close(); conn.close()
+    return True, None
+
+
 def get_account_info(clerk_id: str):
     """Self-service view of the caller's own account: who's on it, what plan,
     and (if the caller is org:admin) what models they can hand out."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT u.id, u.account_id, u.org_role, a.plan, a.plan_expires_at, a.clerk_org_id,
+        SELECT u.id, u.account_id, u.org_role, a.plan, a.plan_expires_at, a.name AS team_name,
                a.storage_limit_gb_override, a.weekly_job_limit_override
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
@@ -879,13 +1025,25 @@ def get_account_info(clerk_id: str):
     """, {"aid": me["account_id"]})
     usage = dict(cur.fetchone())
 
+    pending_invites = []
+    if me["org_role"] == "admin":
+        cur.execute("""
+            SELECT id, email, created_at, expires_at
+            FROM team_invites WHERE account_id = %s AND status = 'pending'
+            ORDER BY created_at DESC
+        """, (me["account_id"],))
+        pending_invites = [dict(r) for r in cur.fetchall()]
+        for inv in pending_invites:
+            inv["created_at"] = inv["created_at"].isoformat()
+            inv["expires_at"] = inv["expires_at"].isoformat()
+
     cur.close(); conn.close()
     return {
         "org_role": me["org_role"],
         "account_plan": me["plan"],
         "plan_expires_at": me["plan_expires_at"].isoformat() if me["plan_expires_at"] else None,
-        "is_organization": me["clerk_org_id"] is not None,
-        "clerk_org_id": me["clerk_org_id"],
+        "is_organization": me["team_name"] is not None,
+        "team_name": me["team_name"],
         "storage_limit_gb": storage_limit_gb,
         "weekly_job_limit": weekly_job_limit,
         "has_custom_limits": me["storage_limit_gb_override"] is not None or me["weekly_job_limit_override"] is not None,
@@ -894,6 +1052,7 @@ def get_account_info(clerk_id: str):
         "teammates": teammates,
         "account_models": account_models,
         "teammate_models": teammate_models,
+        "pending_invites": pending_invites,
     }
 
 

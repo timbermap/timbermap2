@@ -31,12 +31,12 @@ type Artifact = {
 type User = {
   id: string; clerk_id: string; email: string; username: string
   is_superadmin: boolean; created_at: string
-  plan: string; plan_expires_at: string | null; clerk_org_id: string | null; has_paid_model: boolean
+  plan: string; plan_expires_at: string | null; team_name: string | null; has_paid_model: boolean
   image_count: number; vector_count: number; job_count: number
   storage_bytes: number
 }
 type UserDetail = User & {
-  account_id: string; org_role: string | null; account_plan: string; clerk_org_id: string | null
+  account_id: string; org_role: string | null; account_plan: string; team_name: string | null
   plan_expires_at: string | null; is_organization: boolean
   storage_limit_gb_override: number | null; weekly_job_limit_override: number | null
   tier_storage_limit_gb: number | null; tier_weekly_job_limit: number | null
@@ -735,7 +735,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     {u.is_superadmin && <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">admin</span>}
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${tierClass[u.plan]}`}>{tierLabel[u.plan] || u.plan}</span>
-                    {u.clerk_org_id && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">org</span>}
+                    {u.team_name && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">team</span>}
                     <span className="text-xs text-gray-400">{u.username}</span>
                   </div>
                 </td>
