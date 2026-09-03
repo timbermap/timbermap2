@@ -918,14 +918,23 @@ async def get_catalog_models(x_clerk_id: str = Header(None)):
                 JOIN users u ON u.id = ur.user_id
                 WHERE ur.model_id = m.id AND u.clerk_id = %s
                 AND ur.status = 'pending'
-            ) AS upgrade_requested
+            ) AS upgrade_requested,
+            (SELECT gcs_path FROM model_artifacts ma
+             WHERE ma.model_id = m.id AND ma.artifact_key = 'sample_image_small') AS sample_image_path
         FROM models m
         WHERE m.is_active = true
         ORDER BY m.is_free DESC, m.name
     """, (x_clerk_id, x_clerk_id, x_clerk_id))
     rows = cur.fetchall()
     cur.close(); conn.close()
-    return [dict(r) for r in rows]
+    bucket = storage.Client().bucket(GCS_BUCKET)
+    result = []
+    for r in rows:
+        d = dict(r)
+        path = d.pop("sample_image_path")
+        d["sample_image_url"] = _cached_signed_url(bucket, path, expiration=timedelta(hours=1), cache_ttl=2700) if path else None
+        result.append(d)
+    return result
 
 
 @app.post("/catalog/activate")

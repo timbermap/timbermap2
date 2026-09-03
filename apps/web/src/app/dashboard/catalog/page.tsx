@@ -13,6 +13,7 @@ interface CatalogModel {
   has_access: boolean
   is_visible: boolean
   upgrade_requested: boolean
+  sample_image_url: string | null
 }
 
 const PIPELINE_LABELS: Record<string, string> = {
@@ -238,10 +239,22 @@ function ModelCard({
       model.has_access ? 'border-[#A0CECC]/60' : 'border-gray-100'
     } ${!model.is_visible && model.has_access ? 'opacity-60' : ''}`}>
 
-      {/* Name + pipeline */}
-      <div className="min-w-0">
-        <p className="font-medium text-[#1A2624] text-sm truncate">{model.name}</p>
-        <p className="text-xs text-gray-400 truncate">{PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}</p>
+      {/* Thumbnail + name + pipeline */}
+      <div className="min-w-0 flex items-center gap-3">
+        {model.sample_image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={model.sample_image_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>
+        ) : (
+          <div className="w-11 h-11 rounded-lg flex-shrink-0 bg-gray-50 border border-gray-100 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300">
+              <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1 2 0 1 1 0 0 1-2 0Z" clipRule="evenodd"/>
+            </svg>
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="font-medium text-[#1A2624] text-sm truncate">{model.name}</p>
+          <p className="text-xs text-gray-400 truncate">{PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}</p>
+        </div>
       </div>
 
       {/* Description + output tags */}
