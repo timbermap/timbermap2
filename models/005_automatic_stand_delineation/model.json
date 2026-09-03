@@ -1,10 +1,14 @@
 {
-  "model_id": null,
+  "model_id": "91ed0a4f-1b2c-44c1-963e-90f61ee9a36c",
   "name": "Automatic Stand Delineation",
   "name_es": "Rodalización Automática PL",
   "slug": "automatic-stand-delineation",
-  "pipeline_type": null,
+  "pipeline_type": "stand_delineation",
   "runner": null,
-  "gcs_weights_prefix": null,
-  "note": "Not yet registered in the DB — drop notebooks/weights/samples in here, then register the model (superadmin or a direct DB insert) once it's ready to wire up. gcs_weights_prefix will be models/{model_id}/ once a model_id exists, matching the other models."
+  "gcs_weights_prefix": "models/91ed0a4f-1b2c-44c1-963e-90f61ee9a36c/",
+  "is_free": false,
+  "required_gsd_cm": 50,
+  "image_type_note": "RGB+NIR SkySat imagery (Planet Labs)",
+  "output_types": ["shapefile"],
+  "note": "Registered in the DB. No runner yet under workers/ml/runners/ (pipeline_type='stand_delineation' isn't in pipeline.py's RUNNERS dict) — notebooks unet_03_inferencia.ipynb and unet_04b_poligonizar_simple.ipynb are the starting point for building it."
 }
