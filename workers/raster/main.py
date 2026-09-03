@@ -336,21 +336,25 @@ def convert_to_cog(input_path: str, output_path: str, extra_warp_args: Optional[
 
 
 def generate_display_cog(cog_path: str, display_path: str) -> bool:
-    """Lightweight JPEG-compressed COG for map display.
+    """Lightweight JPEG-compressed raster for map display.
 
-    8-bit imagery: re-encodes the first 3 bands as JPEG, letting the COG
-    driver build a fresh overview pyramid — the common case for ordinary
-    RGB(A) photos. (Previously reused the source COG's overviews via
-    OVERVIEWS=FORCE_USE_EXISTING, but that silently produced zero
-    overviews when the source had an alpha band, leaving huge images
-    with no fast low-zoom path to render from — see San Ramon incident.)
-
+    8-bit imagery: re-encodes the first 3 bands as JPEG.
     Non-8-bit imagery (e.g. UInt16 multispectral sensors — real values often
     occupy a small slice of the range, e.g. 0-5000 of 0-65535, so displaying
     them un-stretched renders as solid black): stretch each of the first 3
     bands to 0-255 using their actual min/max (nodata-aware, approximate —
-    fast even on huge rasters) before JPEG-encoding. This is a real resample
-    pass since the existing overviews were built for the original bit depth.
+    fast even on huge rasters) before JPEG-encoding.
+
+    Two gdal_translate/gdaladdo steps, not a single `-of COG` call: the COG
+    driver silently ignores PHOTOMETRIC and always writes YCbCr-subsampled
+    JPEG, but the map viewer's transparency check (a plain nodata color-key
+    match against raw pixel values) only works against true RGB — under
+    YCbCr, black (0,0,0) encodes as (Y=0,Cb=128,Cr=128), which a
+    single-value nodata check never matches, so masked/nodata areas render
+    as solid black instead of transparent (San Ramon / ElMinero incidents).
+    A plain tiled GeoTIFF with overviews is just as HTTP-range-read
+    friendly as a COG for our purposes, so skipping the COG driver costs
+    nothing.
     """
     import subprocess
     from osgeo import gdal
@@ -370,6 +374,23 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
     # (e.g. NIR) and must not be treated as one.
     has_alpha = nbands == 4 and ds.GetRasterBand(4).GetColorInterpretation() == gdal.GCI_AlphaBand
     mask_args = ["-mask", "4"] if has_alpha else []
+    display_bands = 3 if has_alpha else min(nbands, 3)
+
+    if is_byte:
+        band_args = []
+        for i in range(1, display_bands + 1):
+            band_args += ["-b", str(i)]
+        ot_args = []
+    else:
+        band_args = []
+        for i in range(1, display_bands + 1):
+            band = ds.GetRasterBand(i)
+            bmin, bmax, _mean, _std = band.GetStatistics(True, True)
+            if bmax <= bmin:
+                bmax = bmin + 1
+            band_args += ["-b", str(i), f"-scale_{i}", str(bmin), str(bmax), "0", "255"]
+        ot_args = ["-ot", "Byte"]
+    ds = None
 
     gdal_env = os.environ.copy()
     gdal_env.update({
@@ -378,44 +399,32 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
         "GDAL_TIFF_INTERNAL_MASK": "YES",
     })
 
-    if is_byte:
-        display_bands = 3 if has_alpha else min(nbands, 3)
-        band_args = []
-        for i in range(1, display_bands + 1):
-            band_args += ["-b", str(i)]
-        ds = None
-        cmd = [
-            "gdal_translate", "-of", "COG",
-            *band_args, *mask_args,
-            "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
-            "-co", "BLOCKSIZE=256",
-            "-co", "BIGTIFF=YES",
-            "--config", "GDAL_CACHEMAX", "256",
-            cog_path, display_path,
-        ]
-    else:
-        display_bands = 3 if has_alpha else min(nbands, 3)
-        band_args = []
-        for i in range(1, display_bands + 1):
-            band = ds.GetRasterBand(i)
-            bmin, bmax, _mean, _std = band.GetStatistics(True, True)
-            if bmax <= bmin:
-                bmax = bmin + 1
-            band_args += ["-b", str(i), f"-scale_{i}", str(bmin), str(bmax), "0", "255"]
-        ds = None
-        cmd = [
-            "gdal_translate", "-of", "COG", "-ot", "Byte",
-            *band_args, *mask_args,
-            "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
-            "-co", "BLOCKSIZE=256",
-            "-co", "BIGTIFF=YES",
-            "--config", "GDAL_CACHEMAX", "256",
-            cog_path, display_path,
-        ]
-
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
+    base_cmd = [
+        "gdal_translate", "-of", "GTiff",
+        *band_args, *ot_args, *mask_args,
+        "-co", "COMPRESS=JPEG", "-co", "PHOTOMETRIC=RGB", "-co", "JPEG_QUALITY=82",
+        "-co", "TILED=YES", "-co", "BLOCKXSIZE=256", "-co", "BLOCKYSIZE=256",
+        "-co", "BIGTIFF=YES",
+        "--config", "GDAL_CACHEMAX", "256",
+        cog_path, display_path,
+    ]
+    r = subprocess.run(base_cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
     if r.returncode != 0:
-        logging.warning("Display COG generation failed for %s: %s", cog_path, r.stderr[:300])
+        logging.warning("Display raster generation failed for %s: %s", cog_path, r.stderr[:300])
+        return False
+
+    addo_cmd = [
+        "gdaladdo",
+        "--config", "COMPRESS_OVERVIEW", "JPEG",
+        "--config", "PHOTOMETRIC_OVERVIEW", "RGB",
+        "--config", "JPEG_QUALITY_OVERVIEW", "82",
+        "--config", "GDAL_CACHEMAX", "256",
+        "-r", "average",
+        display_path, "2", "4", "8", "16", "32", "64", "128",
+    ]
+    r2 = subprocess.run(addo_cmd, capture_output=True, text=True, timeout=3600, env=gdal_env)
+    if r2.returncode != 0:
+        logging.warning("Display overview build failed for %s: %s", display_path, r2.stderr[:300])
         return False
     return True
 

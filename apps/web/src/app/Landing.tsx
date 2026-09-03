@@ -7,6 +7,7 @@ import ContactForm from './ContactForm'
 interface PublicModel {
   id: string
   name: string
+  slug: string
   description: string
   output_types: string[]
   is_free: boolean
@@ -29,7 +30,7 @@ function ModelCard({ model, n }: { model: PublicModel; n: string }) {
     return () => clearInterval(t)
   }, [images.length])
   return (
-    <div className="tm-model-card">
+    <Link href={`/models/${model.slug}`} className="tm-model-card">
       <div className="tm-model-img-wrap">
         {images.length > 0 ? images.map((src, i) => (
           <img key={src} src={src} alt={model.name}
@@ -43,7 +44,7 @@ function ModelCard({ model, n }: { model: PublicModel; n: string }) {
         {images.length > 1 && (
           <div className="tm-model-dots">
             {images.map((_, i) => (
-              <button key={i} onClick={() => setIdx(i)}
+              <button key={i} onClick={e => { e.preventDefault(); e.stopPropagation(); setIdx(i) }}
                 className={`tm-model-dot${i === idx ? ' active' : ''}`} />
             ))}
           </div>
@@ -63,7 +64,7 @@ function ModelCard({ model, n }: { model: PublicModel; n: string }) {
           {(model.output_types || []).map(t => <span key={t}>{OUTPUT_LABELS[t] || t}</span>)}
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 
@@ -217,9 +218,13 @@ export default function Landing() {
       {/* ── Models ──────────────────────────────────────────────────────── */}
       <section className="tm-models" id="models">
         <div className="tm-wrap">
-          <p className="tm-label tm-label-light">AI Models</p>
+          <p className="tm-label tm-label-light">Sample Models</p>
           <h2 className="tm-h2 tm-h2-light">Purpose-built for<br/>plantation operations</h2>
-          <p className="tm-models-sub">A sample of our current models. Every plantation is different — if you need something specific, we can build it for you.</p>
+          <p className="tm-models-sub">
+            A sample of our current models — click any one for full details. Every plantation is
+            different — if you need something specific, we can build it for you.{' '}
+            <Link href="/models" className="tm-models-link">View full catalog →</Link>
+          </p>
 
           <div className="tm-models-grid">
             {models.map((m, i) => <ModelCard key={m.id} model={m} n={String(i + 1).padStart(2, '0')} />)}
@@ -357,8 +362,10 @@ export default function Landing() {
         /* MODELS */
         .tm-models { background:#1A2624;padding:6rem 1.5rem; }
         .tm-models-sub { font-size:.9rem;color:rgba(240,247,246,.45);max-width:520px;margin-bottom:3rem;font-weight:400;line-height:1.65; }
+        .tm-models-link { color:#6AA8A0;font-weight:600;white-space:nowrap; }
+        .tm-models-link:hover { color:#A0CECC; }
         .tm-models-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem;margin-bottom:3rem; }
-        .tm-model-card { background:rgba(255,255,255,.04);border:1px solid rgba(160,206,204,.12);border-radius:14px;overflow:hidden;transition:border-color .2s; }
+        .tm-model-card { display:block;text-decoration:none;color:inherit;background:rgba(255,255,255,.04);border:1px solid rgba(160,206,204,.12);border-radius:14px;overflow:hidden;transition:border-color .2s;cursor:pointer; }
         .tm-model-card:hover { border-color:rgba(160,206,204,.3); }
         .tm-model-img-wrap { position:relative;height:200px;overflow:hidden; }
         .tm-model-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:saturate(0.85) brightness(0.8); }

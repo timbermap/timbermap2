@@ -6,6 +6,7 @@ import Link from 'next/link'
 interface CatalogModel {
   id: string
   name: string
+  slug: string
   description: string
   pipeline_type: string
   output_types: string[]
@@ -252,7 +253,10 @@ function ModelCard({
           </div>
         )}
         <div className="min-w-0">
-          <p className="font-medium text-[#1A2624] text-sm truncate">{model.name}</p>
+          <Link href={`/models/${model.slug}`} target="_blank"
+            className="font-medium text-[#1A2624] text-sm truncate hover:text-[#3D7A72] hover:underline block">
+            {model.name}
+          </Link>
           <p className="text-xs text-gray-400 truncate">{PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}</p>
         </div>
       </div>
