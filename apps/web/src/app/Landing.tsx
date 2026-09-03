@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { SignInButton, SignUp } from '@clerk/nextjs'
+import { SignInButton, SignIn } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
 interface PublicModel {
@@ -137,10 +137,10 @@ export default function Landing() {
           </div>
 
           <div className="tm-hero-auth">
-            <SignUp
+            <SignIn
               routing="hash"
               forceRedirectUrl="/dashboard"
-              signInUrl="/sign-in"
+              signUpUrl="/sign-up"
               appearance={{
                 elements: {
                   rootBox: 'w-full',
