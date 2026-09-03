@@ -228,13 +228,27 @@ def clerk_user_by_email(email: str, _: str = Depends(require_superadmin)):
 @router.post("/reconcile-clerk-id")
 def reconcile_clerk_id(old_clerk_id: str, new_clerk_id: str, _: str = Depends(require_superadmin)):
     """Repoints an existing users row at its new prod-instance clerk_id,
-    preserving is_superadmin / account_id / everything else."""
+    preserving is_superadmin / account_id / everything else. If a fresh
+    placeholder row already exists at new_clerk_id (created by the
+    ensure_user fallback the first time this person hit the API under
+    their new id), that placeholder — and its throwaway personal account,
+    if nothing else references it — is discarded in favor of the real one."""
     conn = database.get_conn()
     cur  = conn.cursor()
     cur.execute("SELECT 1 FROM users WHERE clerk_id = %s", (old_clerk_id,))
     if not cur.fetchone():
         cur.close(); conn.close()
         raise HTTPException(404, f"No user row with clerk_id={old_clerk_id}")
+
+    cur.execute("SELECT account_id FROM users WHERE clerk_id = %s", (new_clerk_id,))
+    placeholder = cur.fetchone()
+    if placeholder:
+        placeholder_account_id = placeholder["account_id"]
+        cur.execute("DELETE FROM users WHERE clerk_id = %s", (new_clerk_id,))
+        cur.execute("SELECT 1 FROM users WHERE account_id = %s", (placeholder_account_id,))
+        if not cur.fetchone():
+            cur.execute("DELETE FROM accounts WHERE id = %s", (placeholder_account_id,))
+
     cur.execute("UPDATE users SET clerk_id = %s WHERE clerk_id = %s", (new_clerk_id, old_clerk_id))
     conn.commit()
     cur.execute("SELECT clerk_id, email, is_superadmin FROM users WHERE clerk_id = %s", (new_clerk_id,))
