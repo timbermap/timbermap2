@@ -198,6 +198,33 @@ def get_user_stats(_: str = Depends(require_superadmin)):
         result.append(d)
     return {"users": result}
 
+# ── Clerk instance migration helper ────────────────────────────────────────────
+# One-off lookup used while reconciling users after the prod Clerk instance
+# switch (dev and prod are separate user pools, so existing DB rows keyed on
+# the old dev clerk_id no longer match anyone signing in for real).
+
+@router.get("/clerk-user-by-email")
+def clerk_user_by_email(email: str, _: str = Depends(require_superadmin)):
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(500, "CLERK_SECRET_KEY not configured")
+    r = http_requests.get(
+        "https://api.clerk.com/v1/users",
+        params={"email_address": [email]},
+        headers={"Authorization": f"Bearer {CLERK_SECRET_KEY}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    users = r.json()
+    if not users:
+        raise HTTPException(404, "No Clerk user with that email")
+    u = users[0]
+    return {
+        "clerk_id": u["id"],
+        "email": email,
+        "username": u.get("username"),
+        "created_at": u.get("created_at"),
+    }
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 @router.get("/models")
