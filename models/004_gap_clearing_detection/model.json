@@ -1,0 +1,9 @@
+{
+  "model_id": "0c41478c-21a1-470c-82bf-fbde18531a5a",
+  "name": "Gap & Clearing Detection",
+  "slug": null,
+  "pipeline_type": "gap_detection",
+  "runner": null,
+  "gcs_weights_prefix": "models/0c41478c-21a1-470c-82bf-fbde18531a5a/",
+  "note": "No runner file yet under workers/ml/runners/ — planned model, not implemented."
+}

@@ -1,0 +1,8 @@
+{
+  "model_id": "e084ce03-7fdb-42f5-bd92-52e8372a27d9",
+  "name": "Laboreo de Líneas",
+  "slug": "laboreo-lineas",
+  "pipeline_type": "hough_lines",
+  "runner": "workers/ml/runners/hough_lines.py",
+  "gcs_weights_prefix": "models/e084ce03-7fdb-42f5-bd92-52e8372a27d9/"
+}

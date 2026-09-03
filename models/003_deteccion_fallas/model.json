@@ -1,0 +1,8 @@
+{
+  "model_id": "e8f12624-65e8-4a97-a81c-a841959baa62",
+  "name": "Detección de Fallas",
+  "slug": "deteccion-fallas",
+  "pipeline_type": "zonal_grid",
+  "runner": "workers/ml/runners/zonal_grid.py",
+  "gcs_weights_prefix": "models/e8f12624-65e8-4a97-a81c-a841959baa62/"
+}

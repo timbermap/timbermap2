@@ -11,3 +11,7 @@ apps/api/.env
 maquina.txt
 *.docx
 claude-clerk-secret.txt
+
+# Model weights live in GCS (see models/README.md), not in git
+models/*/02_weights/*
+!models/*/02_weights/.gitkeep

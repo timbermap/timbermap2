@@ -1,0 +1,8 @@
+{
+  "model_id": "fccc515f-0b58-4611-8229-fb72c839039b",
+  "name": "Conteo de Copas",
+  "slug": "conteo-copas",
+  "pipeline_type": "blob_detection",
+  "runner": "workers/ml/runners/blob_detection.py",
+  "gcs_weights_prefix": "models/fccc515f-0b58-4611-8229-fb72c839039b/"
+}
