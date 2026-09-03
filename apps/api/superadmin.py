@@ -400,25 +400,33 @@ def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(requ
     too if this was its last member, and the user in Clerk itself."""
     if target_clerk_id == admin_clerk_id:
         raise HTTPException(400, "Can't delete your own account from here")
-    if not database.get_user_id(target_clerk_id):
-        raise HTTPException(404, "User not found")
 
-    conn = database.get_conn(); cur = conn.cursor()
-    cur.execute("SELECT account_id FROM users WHERE clerk_id = %s", (target_clerk_id,))
-    row = cur.fetchone()
-    account_id = row["account_id"] if row else None
-    cur.close(); conn.close()
+    has_db_row = bool(database.get_user_id(target_clerk_id))
+    account_id = None
+    if has_db_row:
+        conn = database.get_conn(); cur = conn.cursor()
+        cur.execute("SELECT account_id FROM users WHERE clerk_id = %s", (target_clerk_id,))
+        row = cur.fetchone()
+        account_id = row["account_id"] if row else None
+        cur.close(); conn.close()
 
-    try:
-        r = http_requests.delete(
-            f"{CLEANUP_WORKER_URL}/user/{target_clerk_id}",
-            headers=cleanup_worker_headers(), timeout=120,
-        )
-        r.raise_for_status()
-    except Exception as e:
-        raise HTTPException(500, f"Cleanup worker failed: {e}")
+        try:
+            r = http_requests.delete(
+                f"{CLEANUP_WORKER_URL}/user/{target_clerk_id}",
+                headers=cleanup_worker_headers(), timeout=120,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            raise HTTPException(500, f"Cleanup worker failed: {e}")
 
+    # Reachable with no DB row too — e.g. someone signed up in Clerk but
+    # never hit an endpoint that provisions a users row (ensure_user), so
+    # there's nothing here to clean up except the orphaned Clerk account.
     clerk_deleted = _delete_clerk_user(target_clerk_id)
+    if not has_db_row:
+        if not clerk_deleted:
+            raise HTTPException(404, "User not found in DB or Clerk")
+        return {"deleted": True, "clerk_id": target_clerk_id, "clerk_user_deleted": True, "account_row_deleted": False}
 
     conn = database.get_conn(); cur = conn.cursor()
     cur.execute("DELETE FROM users WHERE clerk_id = %s", (target_clerk_id,))
