@@ -100,6 +100,56 @@ def clip_raster_to_vector(input_tiff: str, vector_path: str, job_id: str) -> str
     return out_path
 
 
+def get_pixel_size_cm(raster_path: str) -> float:
+    """Real-world ground sample distance in cm/pixel — geodesically
+    accurate even for rasters in a geographic (degrees) CRS, where the raw
+    pixel_size in degrees isn't directly comparable to a cm target."""
+    with rasterio.open(raster_path) as src:
+        transform = src.transform
+        crs = src.crs
+        x0, y0 = transform * (0, 0)
+        x1, y1 = transform * (1, 0)
+    if crs.is_geographic:
+        from pyproj import Geod
+        geod = Geod(ellps="WGS84")
+        _, _, dist_m = geod.inv(x0, y0, x1, y1)
+    else:
+        dist_m = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+    return dist_m * 100
+
+
+def resample_to_gsd_if_needed(input_tiff: str, target_gsd_cm: float, job_id: str,
+                               tolerance: float = 0.05) -> tuple[str, dict]:
+    """Resamples to target_gsd_cm/pixel if the raster's actual GSD differs
+    by more than `tolerance` (default 5%) — models are trained at a
+    specific resolution and degrade on mismatched input. Returns
+    (path_to_use, info) where info is safe to store on the job for
+    auditability, e.g. {"resampled": true, "from_gsd_cm": 8.2, "to_gsd_cm": 10}."""
+    actual_cm = get_pixel_size_cm(input_tiff)
+    info = {"resampled": False, "from_gsd_cm": round(actual_cm, 3), "to_gsd_cm": target_gsd_cm}
+    if actual_cm <= 0 or abs(actual_cm - target_gsd_cm) / target_gsd_cm <= tolerance:
+        return input_tiff, info
+
+    out_path = f"/tmp/{job_id}_resampled.tif"
+    target_m = target_gsd_cm / 100
+    with rasterio.open(input_tiff) as src:
+        crs = src.crs
+    warp_kwargs = dict(
+        xRes=target_m, yRes=target_m, resampleAlg="bilinear",
+        creationOptions=["BIGTIFF=YES", "TILED=YES", "COMPRESS=LZW"],
+    )
+    if crs.is_geographic:
+        # xRes/yRes are in the *destination* CRS's units — a geographic
+        # source has no meaningful "meters" resolution, so reproject to a
+        # metric CRS (Web Mercator) as part of the same warp.
+        warp_kwargs["dstSRS"] = "EPSG:3857"
+    result = gdal.Warp(out_path, input_tiff, **warp_kwargs)
+    result = None
+    info["resampled"] = True
+    log.info("Resampled %s: %.2fcm/px → %.2fcm/px (%s)", input_tiff, actual_cm, target_gsd_cm, out_path)
+    return out_path, info
+
+
 def convert_to_cog(input_tiff: str, job_id: str, suffix: str = "cog") -> str:
     """Converts a GeoTIFF to COG using GDAL."""
     out_path = f"/tmp/{job_id}_{suffix}.tif"

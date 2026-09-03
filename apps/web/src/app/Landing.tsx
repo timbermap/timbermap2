@@ -10,6 +10,8 @@ interface PublicModel {
   description: string
   output_types: string[]
   is_free: boolean
+  required_gsd_cm: number | null
+  image_type_note: string | null
   sample_image_small_url: string | null
   sample_image_large_url: string | null
 }
@@ -50,6 +52,13 @@ function ModelCard({ model, n }: { model: PublicModel; n: string }) {
       <div className="tm-model-body">
         <h3>{model.name}</h3>
         <p>{model.description}</p>
+        {(model.required_gsd_cm || model.image_type_note) && (
+          <p className="tm-model-spec">
+            {model.required_gsd_cm && <span>{model.required_gsd_cm}cm/px GSD</span>}
+            {model.required_gsd_cm && model.image_type_note && ' · '}
+            {model.image_type_note}
+          </p>
+        )}
         <div className="tm-model-tags">
           {(model.output_types || []).map(t => <span key={t}>{OUTPUT_LABELS[t] || t}</span>)}
         </div>
@@ -362,6 +371,7 @@ export default function Landing() {
         .tm-model-body { padding:1.5rem; }
         .tm-model-body h3 { font-size:.95rem;font-weight:600;color:#F0F7F6;margin-bottom:.5rem; }
         .tm-model-body p { font-size:.82rem;color:rgba(240,247,246,.45);line-height:1.65;margin-bottom:1.1rem;font-weight:400; }
+        .tm-model-spec { font-size:.72rem;color:#6AA8A0;font-weight:600;margin-top:-.5rem;margin-bottom:1.1rem; }
         .tm-model-tags { display:flex;gap:.5rem;flex-wrap:wrap; }
         .tm-model-tags span { font-size:.62rem;padding:.2rem .55rem;border-radius:999px;background:rgba(106,168,160,.12);border:1px solid rgba(106,168,160,.2);color:#6AA8A0;font-weight:500; }
         .tm-models-cta { text-align:center;padding:2.5rem;border:1px dashed rgba(160,206,204,.25);border-radius:14px;background:rgba(255,255,255,.02); }

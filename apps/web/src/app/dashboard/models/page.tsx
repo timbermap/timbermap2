@@ -14,6 +14,8 @@ type Model = {
   has_access: boolean
   is_visible: boolean
   required_vector_input: RequiredVectorInput | null
+  required_gsd_cm: number | null
+  image_type_note: string | null
 }
 type ImageFile = {
   id: string; filename: string; status: string
@@ -207,6 +209,13 @@ export default function ModelsPage() {
               </span>
             </div>
             <p className="text-sm text-gray-500 leading-relaxed">{model.description}</p>
+            {(model.required_gsd_cm || model.image_type_note) && (
+              <p className="text-xs text-[#6AA8A0] font-medium mt-1">
+                {model.required_gsd_cm && <span>Optimized for {model.required_gsd_cm}cm/px</span>}
+                {model.required_gsd_cm && model.image_type_note && ' · '}
+                {model.image_type_note}
+              </p>
+            )}
             {model.output_types?.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
                 <span className="text-xs text-gray-400">Outputs:</span>
@@ -262,6 +271,12 @@ export default function ModelsPage() {
                       </option>
                     ))}
                   </select>
+                )}
+                {model.required_gsd_cm && (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    Images off {model.required_gsd_cm}cm/px by more than 5% are automatically
+                    resampled before processing.
+                  </p>
                 )}
               </div>
 

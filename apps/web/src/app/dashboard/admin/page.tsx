@@ -20,6 +20,7 @@ type Model = {
   output_types: string[]; inference_config: Record<string,unknown>
   phase2_config: Record<string,unknown>
   required_vector_input: Record<string,unknown> | null
+  required_gsd_cm: number | null; image_type_note: string | null
   user_count: number; job_count: number; artifact_count: number
   artifacts?: Artifact[]
 }
@@ -275,6 +276,7 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
     name: '', slug: '', description: '', pipeline_type: 'blob_detection',
     version: '1.0', output_types: '["raster_cog","geojson","shapefile"]',
     inference_config: '{}', phase2_config: '{}', required_vector_input: '',
+    required_gsd_cm: '', image_type_note: '',
   })
 
   function openEdit(m: Model) {
@@ -286,6 +288,8 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
       inference_config: JSON.stringify(m.inference_config || {}, null, 2),
       phase2_config: JSON.stringify(m.phase2_config || {}, null, 2),
       required_vector_input: m.required_vector_input ? JSON.stringify(m.required_vector_input, null, 2) : '',
+      required_gsd_cm: m.required_gsd_cm != null ? String(m.required_gsd_cm) : '',
+      image_type_note: m.image_type_note || '',
     })
   }
 
@@ -299,6 +303,7 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
         inference_config: JSON.parse(form.inference_config),
         phase2_config: JSON.parse(form.phase2_config),
         required_vector_input: form.required_vector_input.trim() ? JSON.parse(form.required_vector_input) : null,
+        required_gsd_cm: form.required_gsd_cm.trim() ? Number(form.required_gsd_cm) : null,
       }
       const url    = `${api}/superadmin/models/${selected.id}`
       const method = 'PUT'
@@ -431,6 +436,28 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
                   onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6AA8A0] transition-all resize-none" />
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Required GSD (cm/px)</label>
+                  <input type="number" step="0.1" value={form.required_gsd_cm}
+                    placeholder="e.g. 10 — empty if not resolution-sensitive"
+                    onChange={e => setForm(p => ({ ...p, required_gsd_cm: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6AA8A0] transition-all" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Image type note</label>
+                  <input value={form.image_type_note}
+                    placeholder="e.g. RGB drone orthomosaic"
+                    onChange={e => setForm(p => ({ ...p, image_type_note: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6AA8A0] transition-all" />
+                </div>
+              </div>
+              <p className="text-xs text-gray-300 -mt-3">
+                Shown on the Landing page and the model Run selector. Images off-GSD by more
+                than 5% are auto-resampled before processing (see required_vector_input note below
+                for shape inputs).
+              </p>
 
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Output types (JSON array)</label>

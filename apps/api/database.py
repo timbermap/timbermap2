@@ -152,6 +152,21 @@ def get_images(owner_id):
     conn.close()
     return [dict(r) for r in rows]
 
+def get_image_by_id(image_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, filename, gcs_path, epsg, num_bands, owner_id,
+               area_ha, filesize, status, geoserver_layer, created_at,
+               bbox_minx, bbox_miny, bbox_maxx, bbox_maxy,
+               pixel_size_x, pixel_size_y, has_display_cog
+        FROM images WHERE id = %s
+    """, (image_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
 # ── Vectors ──────────────────────────────────────────────────────────────────
 
 def insert_vector(owner_id, filename, gcs_path, filesize):
@@ -181,6 +196,33 @@ def get_vectors(owner_id):
     cur.close()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_vector_bbox_wgs84(vector_id: str):
+    """WGS84 bbox [minx,miny,maxx,maxy] of a vector's actual geometry, or None
+    if it has no rows / doesn't exist. Used to pre-flight-check that an AOI
+    vector actually overlaps the target image before queuing a job."""
+    conn = get_conn()
+    cur = conn.cursor()
+    table = f"vec_{str(vector_id).replace('-', '_')}"
+    try:
+        cur.execute(f"""
+            SELECT ST_Extent(ST_Transform(geometry, 4326)) AS ext
+            FROM "vectors"."{table}"
+            WHERE geometry IS NOT NULL
+        """)
+        row = cur.fetchone()
+    except Exception:
+        cur.close(); conn.close()
+        return None
+    cur.close(); conn.close()
+    if not row or not row["ext"]:
+        return None
+    import re
+    nums = re.findall(r"[-0-9.]+", str(row["ext"]))
+    if len(nums) != 4:
+        return None
+    return [float(n) for n in nums]
+
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────
 
@@ -543,7 +585,8 @@ def superadmin_update_model(model_id: str, data: dict):
     values = []
     allowed = ['name', 'description', 'version', 'pipeline_type',
                'inference_config', 'phase2_config', 'output_types',
-               'required_vector_input', 'is_active', 'active']
+               'required_vector_input', 'required_gsd_cm', 'image_type_note',
+               'is_active', 'active']
     for key in allowed:
         if key in data:
             fields.append(f"{key} = %s")

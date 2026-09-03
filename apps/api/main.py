@@ -23,6 +23,8 @@ from database import (
     get_images, get_vectors, get_jobs,
     insert_job,
     get_model_by_id,
+    get_image_by_id,
+    get_vector_bbox_wgs84,
     check_model_permission,
     insert_job_ml,
     get_job_outputs,
@@ -691,6 +693,27 @@ def run_model(req: RunModelRequest):
                 detail=f"This model requires a {required_input.get('label', 'vector')} input",
             )
 
+        # If a vector is being used (AOI or required input), reject up front
+        # if it doesn't even overlap the image — instead of queuing a job
+        # that would just clip to nothing and fail (or silently no-op) deep
+        # inside the worker.
+        if req.vector_id:
+            image = get_image_by_id(req.image_id)
+            img_bbox = None
+            if image and all(image.get(k) is not None for k in ["bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy"]):
+                img_bbox = [image["bbox_minx"], image["bbox_miny"], image["bbox_maxx"], image["bbox_maxy"]]
+            vec_bbox = get_vector_bbox_wgs84(req.vector_id)
+            if img_bbox and vec_bbox:
+                overlaps = not (
+                    vec_bbox[2] < img_bbox[0] or vec_bbox[0] > img_bbox[2] or
+                    vec_bbox[3] < img_bbox[1] or vec_bbox[1] > img_bbox[3]
+                )
+                if not overlaps:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="The selected shapefile doesn't overlap the image — nothing to process.",
+                    )
+
         job_id = insert_job_ml(
             owner_id=str(user_id),
             model_id=req.model_id,
@@ -910,6 +933,8 @@ async def get_public_models():
             m.id, m.name, m.description, m.pipeline_type,
             COALESCE(m.output_types, '[]'::jsonb) AS output_types,
             COALESCE(m.is_free, false) AS is_free,
+            m.required_gsd_cm,
+            m.image_type_note,
             (SELECT gcs_path FROM model_artifacts ma
              WHERE ma.model_id = m.id AND ma.artifact_key = 'sample_image_small') AS small_path,
             (SELECT gcs_path FROM model_artifacts ma
@@ -948,6 +973,8 @@ async def get_catalog_models(x_clerk_id: str = Header(None)):
             COALESCE(m.output_types, '[]'::jsonb) AS output_types,
             COALESCE(m.is_free, false) AS is_free,
             m.required_vector_input,
+            m.required_gsd_cm,
+            m.image_type_note,
             EXISTS(
                 SELECT 1 FROM user_model_permissions um
                 JOIN users u ON u.id = um.user_id

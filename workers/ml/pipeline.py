@@ -62,6 +62,24 @@ async def run_pipeline(job_id: str, model_id: str, image_id: str,
     source_path  = cog_path
     geo_utils.download_from_gcs(source_path, local_image)
 
+    # ── 2b. Match the model's trained GSD ─────────────────────────────────────
+    # Models are trained at a specific ground sample distance — feeding them
+    # imagery off by more than a few % degrades results silently. Resample
+    # once here (before the AOI clip, so the clip's own bounds don't need
+    # adjusting) rather than per-tile inside inference.
+    preprocessing_info = {"resampled": False}
+    required_gsd_cm = model.get("required_gsd_cm")
+    if required_gsd_cm:
+        db.update_job_status(job_id, "running", "Checking image resolution...")
+        local_image, preprocessing_info = geo_utils.resample_to_gsd_if_needed(
+            local_image, float(required_gsd_cm), job_id,
+        )
+        if preprocessing_info["resampled"]:
+            db.update_job_status(
+                job_id, "running",
+                f"Resampling {preprocessing_info['from_gsd_cm']}cm/px → {preprocessing_info['to_gsd_cm']}cm/px...",
+            )
+
     # ── 3. Optional AOI clip ──────────────────────────────────────────────────
     aoi_shp = None
 
@@ -171,6 +189,7 @@ async def run_pipeline(job_id: str, model_id: str, image_id: str,
     _, summary = runner.run(**_run_kwargs)
 
     # ── 7. Finalize ───────────────────────────────────────────────────────────
+    summary["preprocessing"] = preprocessing_info
     db.update_job_summary(job_id, summary)
     log.info("Pipeline complete — job=%s summary=%s", job_id, summary)
 
