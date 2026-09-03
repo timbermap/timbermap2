@@ -79,6 +79,17 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
     setActing(null)
   }
 
+  async function leaveTeam() {
+    if (!confirm("Leave this team? You'll get your own personal account back on the free plan.")) return
+    setActing('leave')
+    try {
+      const r = await fetch(`${API}/account/team/leave`, { method: 'POST', headers: h })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || 'Failed to leave team') }
+      load()
+    } catch (e) { setError(String(e instanceof Error ? e.message : e)) }
+    finally { setActing(null) }
+  }
+
   async function removeTeammate(clerkId: string) {
     if (!confirm('Remove this teammate? They’ll get their own personal account back.')) return
     setActing(`remove:${clerkId}`)
@@ -162,6 +173,11 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
           </div>
           <p className="text-xs text-gray-300 mt-4">Ask your team admin to invite others or change model access.</p>
         </div>
+        {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
+        <button onClick={leaveTeam} disabled={acting === 'leave'}
+          className="mt-4 text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 cursor-pointer">
+          {acting === 'leave' ? 'Leaving...' : 'Leave team'}
+        </button>
       </div>
     )
   }

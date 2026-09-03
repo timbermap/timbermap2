@@ -208,3 +208,11 @@ def remove_teammate(teammate_clerk_id: str, clerk_id: str = Depends(current_user
     if not ok:
         raise HTTPException(403, error)
     return {"removed": True, "teammate": teammate_clerk_id}
+
+
+@router.post("/team/leave")
+def leave_team(clerk_id: str = Depends(current_user)):
+    ok, error = database.leave_team(clerk_id)
+    if not ok:
+        raise HTTPException(400, error)
+    return {"left": True}

@@ -972,6 +972,36 @@ def remove_teammate(admin_clerk_id: str, teammate_clerk_id: str):
     return True, None
 
 
+def leave_team(clerk_id: str):
+    """Self-service — a non-admin member leaves their team and gets a fresh
+    personal account back (defaults to the free/basic plan, same as
+    remove_teammate). Admins can't leave this way since it would strand the
+    team with no admin; they'd need to hand off admin or delete the team."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.id, u.org_role, a.name AS team_name
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me or not me["team_name"]:
+        cur.close(); conn.close()
+        return False, "You're not part of a team"
+    if me["org_role"] == "admin":
+        cur.close(); conn.close()
+        return False, "Team admins can't leave — remove the team or hand off admin to another member first"
+    cur.execute("INSERT INTO accounts DEFAULT VALUES RETURNING id")
+    new_account_id = cur.fetchone()["id"]
+    cur.execute(
+        "UPDATE users SET account_id = %s, org_role = NULL WHERE id = %s",
+        (new_account_id, me["id"]),
+    )
+    conn.commit()
+    cur.close(); conn.close()
+    return True, None
+
+
 def get_account_info(clerk_id: str):
     """Self-service view of the caller's own account: who's on it, what plan,
     and (if the caller is org:admin) what models they can hand out."""
