@@ -35,7 +35,7 @@ gcloud run deploy ${SERVICE} \
   --timeout 60 \
   --min-instances 0 \
   --max-instances 5 \
-  --set-env-vars "NEXT_PUBLIC_API_URL=https://timbermap-api-tjrp7tcqaa-uc.a.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YWRhcHRpbmctbWFjYXctNDYuY2xlcmsuYWNjb3VudHMuZGV2JA,NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in,NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up,NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard,NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard" \
+  --set-env-vars "NEXT_PUBLIC_API_URL=https://timbermap-api-tjrp7tcqaa-uc.a.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsudGltYmVybWFwLmNvbSQ,NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in,NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up,NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard,NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard" \
   --update-secrets="CLERK_SECRET_KEY=clerk-secret-key:latest,RESEND_API_KEY=resend-api-key:latest"
 
 WEB_URL=$(gcloud run services describe ${SERVICE} \
