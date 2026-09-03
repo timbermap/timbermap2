@@ -888,6 +888,40 @@ UPGRADE_EMAIL = "sebastian@timbermap.com"
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 
+@app.get("/public/models")
+async def get_public_models():
+    """Unauthenticated — powers the marketing Landing page's model showcase.
+    No per-user fields (has_access, is_visible, etc.), just what's safe to
+    show anyone: name, description, outputs, free/pro, and sample images."""
+    conn = get_db_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT
+            m.id, m.name, m.description, m.pipeline_type,
+            COALESCE(m.output_types, '[]'::jsonb) AS output_types,
+            COALESCE(m.is_free, false) AS is_free,
+            (SELECT gcs_path FROM model_artifacts ma
+             WHERE ma.model_id = m.id AND ma.artifact_key = 'sample_image_small') AS small_path,
+            (SELECT gcs_path FROM model_artifacts ma
+             WHERE ma.model_id = m.id AND ma.artifact_key = 'sample_image_large') AS large_path
+        FROM models m
+        WHERE m.is_active = true
+        ORDER BY m.is_free DESC, m.name
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    bucket = storage.Client().bucket(GCS_BUCKET)
+    result = []
+    for r in rows:
+        d = dict(r)
+        small_path = d.pop("small_path")
+        large_path = d.pop("large_path")
+        d["sample_image_small_url"] = _cached_signed_url(bucket, small_path, expiration=timedelta(hours=1), cache_ttl=2700) if small_path else None
+        d["sample_image_large_url"] = _cached_signed_url(bucket, large_path, expiration=timedelta(hours=1), cache_ttl=2700) if large_path else None
+        result.append(d)
+    return result
+
+
 @app.get("/catalog/models")
 async def get_catalog_models(x_clerk_id: str = Header(None)):
     """All models in DB with whether this user has access and has requested upgrade."""

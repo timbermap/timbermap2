@@ -4,54 +4,54 @@ import { useState, useEffect } from 'react'
 import { SignInButton, SignUpButton } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
-const MODELS = [
-  {
-    n: '01', title: 'Tree Crown Detection',
-    body: 'Automatically counts and maps individual tree crowns from aerial imagery. Outputs a probability raster and georeferenced point cloud.',
-    tags: ['Raster COG', 'GeoJSON', 'Shapefile'],
-    images: ['/model_images/model_1/image_1.jpg', '/model_images/model_1/image_2.jpg', '/model_images/model_1/image_3.jpg'],
-  },
-  {
-    n: '02', title: 'Tillage Line Detection',
-    body: 'Detects inter-row spacing in forest plantations. Generates stand-level statistics when a plot shapefile with stand attributes is provided.',
-    tags: ['Raster COG', 'Shapefile'],
-    images: ['/model_images/model_2/image_1.jpg', '/model_images/model_2/image_2.jpg', '/model_images/model_2/image_3.jpg'],
-  },
-  {
-    n: '03', title: 'Plantation Fault Detection',
-    body: 'Generates a vector grid and calculates a fault density index per cell, calibrated per resolution and species type.',
-    tags: ['Raster COG', 'GeoJSON', 'Shapefile'],
-    images: ['/model_images/model_3/image_1.jpg', '/model_images/model_3/image_2.jpg', '/model_images/model_3/image_3.jpg'],
-  },
-]
+interface PublicModel {
+  id: string
+  name: string
+  description: string
+  output_types: string[]
+  is_free: boolean
+  sample_image_small_url: string | null
+  sample_image_large_url: string | null
+}
 
-function ModelCard({ model }: { model: typeof MODELS[0] }) {
+const OUTPUT_LABELS: Record<string, string> = {
+  raster_cog: 'Raster COG', geojson: 'GeoJSON', shapefile: 'Shapefile', csv: 'CSV',
+}
+
+function ModelCard({ model, n }: { model: PublicModel; n: string }) {
+  const images = [model.sample_image_large_url, model.sample_image_small_url].filter(Boolean) as string[]
   const [idx, setIdx] = useState(0)
   useEffect(() => {
-    const t = setInterval(() => setIdx(i => (i + 1) % model.images.length), 3500)
+    if (images.length < 2) return
+    const t = setInterval(() => setIdx(i => (i + 1) % images.length), 3500)
     return () => clearInterval(t)
-  }, [model.images.length])
+  }, [images.length])
   return (
     <div className="tm-model-card">
       <div className="tm-model-img-wrap">
-        {model.images.map((src, i) => (
-          <img key={src} src={src} alt={model.title}
+        {images.length > 0 ? images.map((src, i) => (
+          <img key={src} src={src} alt={model.name}
             className="tm-model-img"
             style={{ opacity: i === idx ? 1 : 0, transition: 'opacity .8s ease' }} />
-        ))}
-        <div className="tm-model-num">{model.n}</div>
-        <div className="tm-model-dots">
-          {model.images.map((_, i) => (
-            <button key={i} onClick={() => setIdx(i)}
-              className={`tm-model-dot${i === idx ? ' active' : ''}`} />
-          ))}
+        )) : <div className="tm-model-img" style={{ background: '#EEF1EF' }} />}
+        <div className="tm-model-num">{n}</div>
+        <div className={`tm-model-badge${model.is_free ? ' tm-model-badge-free' : ''}`}>
+          {model.is_free ? 'Free' : 'Pro'}
         </div>
+        {images.length > 1 && (
+          <div className="tm-model-dots">
+            {images.map((_, i) => (
+              <button key={i} onClick={() => setIdx(i)}
+                className={`tm-model-dot${i === idx ? ' active' : ''}`} />
+            ))}
+          </div>
+        )}
       </div>
       <div className="tm-model-body">
-        <h3>{model.title}</h3>
-        <p>{model.body}</p>
+        <h3>{model.name}</h3>
+        <p>{model.description}</p>
         <div className="tm-model-tags">
-          {model.tags.map(t => <span key={t}>{t}</span>)}
+          {(model.output_types || []).map(t => <span key={t}>{OUTPUT_LABELS[t] || t}</span>)}
         </div>
       </div>
     </div>
@@ -59,6 +59,12 @@ function ModelCard({ model }: { model: typeof MODELS[0] }) {
 }
 
 export default function Landing() {
+  const [models, setModels] = useState<PublicModel[]>([])
+  useEffect(() => {
+    const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
+    fetch(`${API}/public/models`).then(r => r.ok ? r.json() : []).then(setModels).catch(() => {})
+  }, [])
+
   return (
     <div className="tm">
 
@@ -207,7 +213,7 @@ export default function Landing() {
           <p className="tm-models-sub">A sample of our current models. Every plantation is different — if you need something specific, we can build it for you.</p>
 
           <div className="tm-models-grid">
-            {MODELS.map(m => <ModelCard key={m.n} model={m} />)}
+            {models.map((m, i) => <ModelCard key={m.id} model={m} n={String(i + 1).padStart(2, '0')} />)}
           </div>
 
           <div className="tm-models-cta">
@@ -348,6 +354,8 @@ export default function Landing() {
         .tm-model-img-wrap { position:relative;height:200px;overflow:hidden; }
         .tm-model-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:saturate(0.85) brightness(0.8); }
         .tm-model-num { position:absolute;top:12px;right:14px;font-size:.65rem;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.6);background:rgba(0,0,0,.35);padding:.2rem .5rem;border-radius:4px;z-index:2; }
+        .tm-model-badge { position:absolute;top:12px;left:14px;font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(240,247,246,.8);background:rgba(0,0,0,.35);padding:.2rem .55rem;border-radius:999px;z-index:2; }
+        .tm-model-badge-free { color:#1A2624;background:#6AA8A0; }
         .tm-model-dots { position:absolute;bottom:10px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:2; }
         .tm-model-dot { width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.35);border:none;cursor:pointer;padding:0;transition:background .2s; }
         .tm-model-dot.active { background:rgba(255,255,255,.9); }

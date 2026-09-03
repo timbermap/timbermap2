@@ -315,22 +315,28 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
     if nbands not in (1, 2, 3, 4):
         ds = None
         return False
+    # Band 4 on a 4-band source is only a transparency mask if it's really
+    # tagged as alpha — on multispectral imagery it's a real spectral band
+    # (e.g. NIR) and must not be treated as one.
+    has_alpha = nbands == 4 and ds.GetRasterBand(4).GetColorInterpretation() == gdal.GCI_AlphaBand
+    mask_args = ["-mask", "4"] if has_alpha else []
 
     gdal_env = os.environ.copy()
     gdal_env.update({
         "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
         "GDAL_HTTP_TIMEOUT": "300",
+        "GDAL_TIFF_INTERNAL_MASK": "YES",
     })
 
     if is_byte:
-        display_bands = min(nbands, 3)
+        display_bands = 3 if has_alpha else min(nbands, 3)
         band_args = []
         for i in range(1, display_bands + 1):
             band_args += ["-b", str(i)]
         ds = None
         cmd = [
             "gdal_translate", "-of", "COG",
-            *band_args,
+            *band_args, *mask_args,
             "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
             "-co", "BLOCKSIZE=256",
             "-co", "BIGTIFF=YES",
@@ -338,7 +344,7 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
             cog_path, display_path,
         ]
     else:
-        display_bands = min(nbands, 3)
+        display_bands = 3 if has_alpha else min(nbands, 3)
         band_args = []
         for i in range(1, display_bands + 1):
             band = ds.GetRasterBand(i)
@@ -349,7 +355,7 @@ def generate_display_cog(cog_path: str, display_path: str) -> bool:
         ds = None
         cmd = [
             "gdal_translate", "-of", "COG", "-ot", "Byte",
-            *band_args,
+            *band_args, *mask_args,
             "-co", "COMPRESS=JPEG", "-co", "QUALITY=82",
             "-co", "BLOCKSIZE=256",
             "-co", "BIGTIFF=YES",
