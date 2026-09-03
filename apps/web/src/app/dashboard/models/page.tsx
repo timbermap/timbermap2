@@ -35,11 +35,6 @@ const PlayIcon = () => (
     <path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z"/>
   </svg>
 )
-const XMarkIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-    <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
-  </svg>
-)
 const SpinnerIcon = () => (
   <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -120,6 +115,15 @@ export default function ModelsPage() {
 
   useEffect(() => { if (isLoaded && user) fetchAll() }, [isLoaded, user, fetchAll])
 
+  // Default to the first active model once the list loads, so the run
+  // panel always has something to show instead of starting empty.
+  useEffect(() => {
+    if (selected) return
+    const active = allModels.filter(m => m.has_access && m.is_visible)
+    if (active.length > 0) setSelected(active[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allModels])
+
   async function handleRun(model: Model) {
     if (!run.imageId) return
     setRun(r => ({ ...r, running: true, error: null, jobId: null }))
@@ -172,238 +176,201 @@ export default function ModelsPage() {
     </div>
   )
 
-  function ModelCard({ model, idx }: { model: Model; idx: number }) {
-    const isOpen        = selected === model.id
+  function RunPanel({ model }: { model: Model }) {
     const isThisRunning = run.running && run.modelId === model.id
     const thisJobId     = run.modelId === model.id ? run.jobId : null
     const thisError     = run.modelId === model.id ? run.error : null
 
     return (
-      <div
-        className={`rounded-2xl overflow-hidden border transition-all duration-200 ${
-          isOpen
-            ? 'border-[#A0CECC] shadow-sm'
-            : 'border-gray-100 bg-white shadow-sm hover:shadow-md hover:border-gray-200'
-        }`}>
-
-        {/* Card header */}
-        <div className={`px-6 py-5 flex items-start gap-5 ${isOpen ? 'bg-[#EEF7F6]' : 'bg-white'}`}>
-          {/* Number badge */}
-          <div className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold tabular-nums mt-0.5 ${
-            isOpen ? 'bg-[#A0CECC] text-[#3D7A72]' : 'bg-[#EEF7F6] text-[#6AA8A0]'
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <h2 className="text-base font-semibold text-[#1C1C1C]">{model.name}</h2>
+          <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+            model.is_free ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-[#FBF6EA] text-[#96814A]'
           }`}>
-            {String(idx + 1).padStart(2, '0')}
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <h2 className="text-sm font-semibold text-[#1C1C1C]">{model.name}</h2>
-              <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
-                model.is_free ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-[#FBF6EA] text-[#96814A]'
-              }`}>
-                {model.is_free ? 'Free' : 'Pro'}
-              </span>
-              <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-[#EEF7F6] text-[#3D7A72] border border-[#A0CECC]">
-                {pipelineLabel[model.pipeline_type] || model.pipeline_type}
-              </span>
-            </div>
-            <p className="text-sm text-gray-500 leading-relaxed">{model.description}</p>
-            {(model.required_gsd_cm || model.image_type_note) && (
-              <p className="text-xs text-[#6AA8A0] font-medium mt-1">
-                {model.required_gsd_cm && <span>Optimized for {model.required_gsd_cm}cm/px</span>}
-                {model.required_gsd_cm && model.image_type_note && ' · '}
-                {model.image_type_note}
-              </p>
-            )}
-            {model.output_types?.length > 0 && (
-              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-                <span className="text-xs text-gray-400">Outputs:</span>
-                {model.output_types.map((t, i) => (
-                  <span key={`${t}-${i}`} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 font-mono">
-                    {outputLabel[t] || t}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Run/cancel button */}
-          <button
-            onClick={() => {
-              setSelected(isOpen ? null : model.id)
-              setRun({ modelId: model.id, imageId: '', vectorId: '', aoiMode: 'none', aoiGeojson: '', running: false, jobId: null, error: null })
-            }}
-            className={`cursor-pointer flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
-              isOpen
-                ? 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'
-                : 'bg-[#3D7A72] text-white hover:bg-[#2A5750] shadow-sm'
-            }`}>
-            {isOpen ? <><XMarkIcon />Cancel</> : <><PlayIcon />Run</>}
-          </button>
+            {model.is_free ? 'Free' : 'Pro'}
+          </span>
+          <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-[#EEF7F6] text-[#3D7A72] border border-[#A0CECC]">
+            {pipelineLabel[model.pipeline_type] || model.pipeline_type}
+          </span>
         </div>
+        <p className="text-sm text-gray-500 leading-relaxed max-w-xl">{model.description}</p>
+        {(model.required_gsd_cm || model.image_type_note) && (
+          <p className="text-xs text-[#6AA8A0] font-medium mt-1">
+            {model.required_gsd_cm && <span>Optimized for {model.required_gsd_cm}cm/px</span>}
+            {model.required_gsd_cm && model.image_type_note && ' · '}
+            {model.image_type_note}
+          </p>
+        )}
+        {model.output_types?.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+            <span className="text-xs text-gray-400">Outputs:</span>
+            {model.output_types.map((t, i) => (
+              <span key={`${t}-${i}`} className="text-xs px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 font-mono">
+                {outputLabel[t] || t}
+              </span>
+            ))}
+          </div>
+        )}
 
-        {/* Run panel */}
-        {isOpen && (
-          <div className="border-t border-[#A0CECC]/60 bg-white px-6 py-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div className="border-t border-gray-50 mt-5 pt-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
 
-              {/* Image */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
-                  <span className="text-[#6AA8A0]"><PhotoIcon /></span>
-                  Image <span className="text-red-400">*</span>
-                </label>
-                {images.length === 0 ? (
-                  <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-                    <WarnIcon />
-                    No processed images. Upload one first.
-                  </div>
-                ) : (
-                  <select
-                    value={run.imageId}
-                    onChange={e => setRun(r => ({ ...r, imageId: e.target.value }))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
-                    <option value="">Select an image...</option>
-                    {images.map(img => (
-                      <option key={img.id} value={img.id}>
-                        {img.filename}{img.area_ha ? ` · ${img.area_ha.toLocaleString()} ha` : ''}{img.epsg ? ` · EPSG:${img.epsg}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {model.required_gsd_cm && (
-                  <p className="text-xs text-gray-400 mt-1.5">
-                    Images off {model.required_gsd_cm}cm/px by more than 5% are automatically
-                    resampled before processing.
-                  </p>
-                )}
-              </div>
-
-              {/* Required vector input (model-specific, e.g. rodales shapefile) OR generic optional AOI */}
-              {model.required_vector_input ? (
-                <div>
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
-                    <span className="text-[#6AA8A0]"><MapPinIcon /></span>
-                    {model.required_vector_input.label}
-                    <span className="text-red-400">*</span>
-                  </label>
-                  {vectors.length === 0 ? (
-                    <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-                      <WarnIcon />
-                      No vectors uploaded. Upload one first.
-                    </div>
-                  ) : (
-                    <select
-                      value={run.vectorId}
-                      onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
-                      <option value="">Select shapefile...</option>
-                      {vectors.map(vec => (
-                        <option key={vec.id} value={vec.id}>{vec.filename}</option>
-                      ))}
-                    </select>
-                  )}
-                  {model.required_vector_input.help_text && (
-                    <p className="flex items-center gap-1.5 text-xs text-amber-600 mt-1.5">
-                      <WarnIcon />
-                      {model.required_vector_input.help_text}
-                    </p>
-                  )}
+            {/* Image */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
+                <span className="text-[#6AA8A0]"><PhotoIcon /></span>
+                Image <span className="text-red-400">*</span>
+              </label>
+              {images.length === 0 ? (
+                <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                  <WarnIcon />
+                  No processed images. Upload one first.
                 </div>
               ) : (
-                <div>
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
-                    <span className="text-[#6AA8A0]"><MapPinIcon /></span>
-                    AOI
-                    <span className="text-gray-300 font-normal">(optional)</span>
-                  </label>
-
-                  <div className="flex gap-1 mb-2">
-                    {([
-                      { key: 'none',    label: 'None' },
-                      { key: 'vector',  label: 'Shapefile' },
-                      { key: 'geojson', label: 'GeoJSON' },
-                    ] as const).map(m => (
-                      <button key={m.key}
-                        onClick={() => setRun(r => ({ ...r, aoiMode: m.key }))}
-                        className={`cursor-pointer text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
-                          run.aoiMode === m.key
-                            ? 'bg-[#3D7A72] text-white border-[#3D7A72]'
-                            : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                        }`}>
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {run.aoiMode === 'vector' && (
-                    <select
-                      value={run.vectorId}
-                      onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
-                      <option value="">Select shapefile...</option>
-                      {vectors.map(vec => (
-                        <option key={vec.id} value={vec.id}>{vec.filename}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {run.aoiMode === 'geojson' && (
-                    <div>
-                      <textarea
-                        value={run.aoiGeojson}
-                        onChange={e => setRun(r => ({ ...r, aoiGeojson: e.target.value }))}
-                        placeholder={'Paste GeoJSON here...\n{"type":"FeatureCollection","features":[...]}'}
-                        rows={4}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all resize-none" />
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <p className="text-xs text-gray-400 flex-1">
-                          Paste any GeoJSON — Feature, FeatureCollection, or Geometry
-                        </p>
-                        <button
-                          onClick={() => {
-                            const stored = localStorage.getItem('map_drawn_aoi')
-                            if (stored) setRun(r => ({ ...r, aoiGeojson: stored }))
-                            else alert('No drawn AOI found. Draw a polygon on the Map page first.')
-                          }}
-                          className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] font-medium whitespace-nowrap">
-                          Use drawn AOI →
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <select
+                  value={run.imageId}
+                  onChange={e => setRun(r => ({ ...r, imageId: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
+                  <option value="">Select an image...</option>
+                  {images.map(img => (
+                    <option key={img.id} value={img.id}>
+                      {img.filename}{img.area_ha ? ` · ${img.area_ha.toLocaleString()} ha` : ''}{img.epsg ? ` · EPSG:${img.epsg}` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {model.required_gsd_cm && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Images off {model.required_gsd_cm}cm/px by more than 5% are automatically
+                  resampled before processing.
+                </p>
               )}
             </div>
 
-            {thisError && (
-              <div className="mb-4 flex items-start gap-2 px-3.5 py-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">
-                <WarnIcon />{thisError}
+            {/* Required vector input (model-specific, e.g. rodales shapefile) OR generic optional AOI */}
+            {model.required_vector_input ? (
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
+                  <span className="text-[#6AA8A0]"><MapPinIcon /></span>
+                  {model.required_vector_input.label}
+                  <span className="text-red-400">*</span>
+                </label>
+                {vectors.length === 0 ? (
+                  <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                    <WarnIcon />
+                    No vectors uploaded. Upload one first.
+                  </div>
+                ) : (
+                  <select
+                    value={run.vectorId}
+                    onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
+                    <option value="">Select shapefile...</option>
+                    {vectors.map(vec => (
+                      <option key={vec.id} value={vec.id}>{vec.filename}</option>
+                    ))}
+                  </select>
+                )}
+                {model.required_vector_input.help_text && (
+                  <p className="flex items-center gap-1.5 text-xs text-amber-600 mt-1.5">
+                    <WarnIcon />
+                    {model.required_vector_input.help_text}
+                  </p>
+                )}
               </div>
-            )}
+            ) : (
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
+                  <span className="text-[#6AA8A0]"><MapPinIcon /></span>
+                  AOI
+                  <span className="text-gray-300 font-normal">(optional)</span>
+                </label>
 
-            {thisJobId && (
-              <div className="mb-4 flex items-center justify-between px-3.5 py-3 bg-[#EEF7F6] border border-[#A0CECC] rounded-xl">
-                <div className="flex items-center gap-2 text-[#3D7A72] text-xs font-medium">
-                  <CheckIcon />Job queued successfully
+                <div className="flex gap-1 mb-2">
+                  {([
+                    { key: 'none',    label: 'None' },
+                    { key: 'vector',  label: 'Shapefile' },
+                    { key: 'geojson', label: 'GeoJSON' },
+                  ] as const).map(m => (
+                    <button key={m.key}
+                      onClick={() => setRun(r => ({ ...r, aoiMode: m.key }))}
+                      className={`cursor-pointer text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
+                        run.aoiMode === m.key
+                          ? 'bg-[#3D7A72] text-white border-[#3D7A72]'
+                          : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                      }`}>
+                      {m.label}
+                    </button>
+                  ))}
                 </div>
-                <a href="/dashboard/jobs"
-                  className="inline-flex items-center gap-1 text-xs text-[#3D7A72] hover:underline font-medium cursor-pointer">
-                  View in Jobs <ArrowRightIcon />
-                </a>
+
+                {run.aoiMode === 'vector' && (
+                  <select
+                    value={run.vectorId}
+                    onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
+                    <option value="">Select shapefile...</option>
+                    {vectors.map(vec => (
+                      <option key={vec.id} value={vec.id}>{vec.filename}</option>
+                    ))}
+                  </select>
+                )}
+
+                {run.aoiMode === 'geojson' && (
+                  <div>
+                    <textarea
+                      value={run.aoiGeojson}
+                      onChange={e => setRun(r => ({ ...r, aoiGeojson: e.target.value }))}
+                      placeholder={'Paste GeoJSON here...\n{"type":"FeatureCollection","features":[...]}'}
+                      rows={4}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all resize-none" />
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <p className="text-xs text-gray-400 flex-1">
+                        Paste any GeoJSON — Feature, FeatureCollection, or Geometry
+                      </p>
+                      <button
+                        onClick={() => {
+                          const stored = localStorage.getItem('map_drawn_aoi')
+                          if (stored) setRun(r => ({ ...r, aoiGeojson: stored }))
+                          else alert('No drawn AOI found. Draw a polygon on the Map page first.')
+                        }}
+                        className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] font-medium whitespace-nowrap">
+                        Use drawn AOI →
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-
-            <button
-              onClick={() => handleRun(model)}
-              disabled={!run.imageId || isThisRunning
-                || (model.required_vector_input ? !run.vectorId : (run.aoiMode === 'geojson' && !run.aoiGeojson))}
-              className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#3D7A72] text-white rounded-xl text-xs font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-              {isThisRunning ? <><SpinnerIcon />Queuing...</> : <><PlayIcon />Run model</>}
-            </button>
           </div>
-        )}
+
+          {thisError && (
+            <div className="mb-4 flex items-start gap-2 px-3.5 py-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">
+              <WarnIcon />{thisError}
+            </div>
+          )}
+
+          {thisJobId && (
+            <div className="mb-4 flex items-center justify-between px-3.5 py-3 bg-[#EEF7F6] border border-[#A0CECC] rounded-xl">
+              <div className="flex items-center gap-2 text-[#3D7A72] text-xs font-medium">
+                <CheckIcon />Job queued successfully
+              </div>
+              <a href="/dashboard/jobs"
+                className="inline-flex items-center gap-1 text-xs text-[#3D7A72] hover:underline font-medium cursor-pointer">
+                View in Jobs <ArrowRightIcon />
+              </a>
+            </div>
+          )}
+
+          <button
+            onClick={() => handleRun(model)}
+            disabled={!run.imageId || isThisRunning
+              || (model.required_vector_input ? !run.vectorId : (run.aoiMode === 'geojson' && !run.aoiGeojson))}
+            className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#3D7A72] text-white rounded-xl text-xs font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+            {isThisRunning ? <><SpinnerIcon />Queuing...</> : <><PlayIcon />Run model</>}
+          </button>
+        </div>
       </div>
     )
   }
@@ -419,34 +386,60 @@ export default function ModelsPage() {
           </div>
           {headerBtn}
         </div>
-        <p className="text-gray-400 mt-1 text-sm">Select a model and run it on your geospatial imagery</p>
+        <p className="text-gray-400 mt-1 text-sm">Pick a model on the left — the run panel stays put so you can fire off several in a row</p>
       </div>
 
-      <div className="space-y-8">
+      <div className="space-y-4">
 
-        {/* ── Your active models — one list, Free/Pro shown as a badge ── */}
-        <div>
-          {activeModels.length === 0 ? (
-            <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
-                <CatalogIcon />
-              </div>
-              <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
-              <p className="text-gray-400 text-xs mb-5">
-                To get started, enable a model from the catalog.
-              </p>
-              <a href="/dashboard/catalog"
-                className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
-                <CatalogIcon />
-                Go to catalog →
-              </a>
+        {activeModels.length === 0 ? (
+          <div className="bg-white rounded-2xl border-2 border-dashed border-[#A0CECC]/60 px-6 py-12 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-[#EEF7F6] flex items-center justify-center mx-auto mb-4">
+              <CatalogIcon />
             </div>
-          ) : (
-            <div className="space-y-3">
-              {[...freeModels, ...proModels].map((model, idx) => <ModelCard key={model.id} model={model} idx={idx} />)}
+            <p className="text-gray-700 text-sm font-medium mb-1">No models enabled yet</p>
+            <p className="text-gray-400 text-xs mb-5">
+              To get started, enable a model from the catalog.
+            </p>
+            <a href="/dashboard/catalog"
+              className="inline-flex items-center gap-2 bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
+              <CatalogIcon />
+              Go to catalog →
+            </a>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 items-start">
+            {/* ── Rail — every active model, Free/Pro shown as a badge ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {[...freeModels, ...proModels].map(model => {
+                const isSel = selected === model.id
+                return (
+                  <button key={model.id}
+                    onClick={() => {
+                      setSelected(model.id)
+                      setRun({ modelId: model.id, imageId: '', vectorId: '', aoiMode: 'none', aoiGeojson: '', running: false, jobId: null, error: null })
+                    }}
+                    className={`cursor-pointer w-full flex items-center gap-2.5 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left transition-colors ${
+                      isSel ? 'bg-[#EEF7F6] border-l-[3px] border-l-[#3D7A72] pl-[13px]' : 'hover:bg-gray-50/70'
+                    }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isSel ? 'bg-[#3D7A72]' : 'bg-gray-200'}`}/>
+                    <span className="text-sm font-medium text-gray-700 flex-1 truncate">{model.name}</span>
+                    <span className={`flex-shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+                      model.is_free ? 'bg-[#EEF7F6] text-[#3D7A72]' : 'bg-[#FBF6EA] text-[#96814A]'
+                    }`}>
+                      {model.is_free ? 'Free' : 'Pro'}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
-          )}
-        </div>
+
+            {/* ── Run panel for the selected model ── */}
+            {(() => {
+              const model = activeModels.find(m => m.id === selected) || activeModels[0]
+              return model ? <RunPanel model={model} /> : null
+            })()}
+          </div>
+        )}
 
         {/* ── Upsell strip — free users only, low-key, not a big centered box ── */}
         {!isPro && (
