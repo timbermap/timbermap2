@@ -1,4 +1,5 @@
-import { SignUp } from '@clerk/nextjs'
+'use client'
+import { SignUp, ClerkLoading, ClerkLoaded } from '@clerk/nextjs'
 import Link from 'next/link'
 
 export default function SignUpPage() {
@@ -14,20 +15,29 @@ export default function SignUpPage() {
         </svg>
       </Link>
 
-      <SignUp
-        path="/sign-up"
-        routing="path"
-        forceRedirectUrl="/dashboard"
-        appearance={{
-          elements: {
-            rootBox: 'w-full max-w-sm',
-            card: 'shadow-2xl border-0 rounded-2xl w-full',
-            formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white text-sm',
-            footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
-            formFieldInput: 'focus:border-[#6AA8A0] focus:ring-[#6AA8A0]',
-          }
-        }}
-      />
+      <ClerkLoading>
+        <div className="flex flex-col items-center gap-4 py-10">
+          <span className="w-8 h-8 border-2 border-[#3D7A72] border-t-transparent rounded-full animate-spin"/>
+          <p className="text-[#A0CECC] text-sm font-medium">Creating account…</p>
+        </div>
+      </ClerkLoading>
+
+      <ClerkLoaded>
+        <SignUp
+          path="/sign-up"
+          routing="path"
+          forceRedirectUrl="/dashboard"
+          appearance={{
+            elements: {
+              rootBox: 'w-full max-w-sm',
+              card: 'shadow-2xl border-0 rounded-2xl w-full',
+              formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white text-sm',
+              footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
+              formFieldInput: 'focus:border-[#6AA8A0] focus:ring-[#6AA8A0]',
+            }
+          }}
+        />
+      </ClerkLoaded>
 
       <Link href="/" className="mt-6 text-sm text-[#6AA8A0] hover:text-[#A0CECC] transition-colors">
         ← Back to timbermap.com
