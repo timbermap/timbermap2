@@ -14,33 +14,24 @@ export default function SignUpPage() {
         </svg>
       </Link>
 
-      <div className="w-full max-w-sm">
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <p className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide mb-1">Get started</p>
-          <h1 className="text-2xl font-light text-[#1A2624] mb-6" style={{letterSpacing: '-0.01em'}}>Create your account</h1>
-          <SignUp
-            path="/sign-up"
-            routing="path"
-            forceRedirectUrl="/dashboard"
-            appearance={{
-              elements: {
-                rootBox: 'w-full',
-                card: 'shadow-none bg-transparent p-0',
-                header: 'hidden',
-                formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white text-sm',
-                footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
-                socialButtonsBlockButton: 'border-gray-200 hover:bg-gray-50',
-                dividerLine: 'bg-gray-200',
-                dividerText: 'text-gray-400',
-                formFieldInput: 'focus:border-[#6AA8A0] focus:ring-[#6AA8A0]',
-              }
-            }}
-          />
-        </div>
-        <Link href="/" className="block text-center mt-6 text-sm text-[#6AA8A0] hover:text-[#A0CECC] transition-colors">
-          ← Back to timbermap.com
-        </Link>
-      </div>
+      <SignUp
+        path="/sign-up"
+        routing="path"
+        forceRedirectUrl="/dashboard"
+        appearance={{
+          elements: {
+            rootBox: 'w-full max-w-sm',
+            card: 'shadow-2xl border-0 rounded-2xl w-full',
+            formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white text-sm',
+            footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
+            formFieldInput: 'focus:border-[#6AA8A0] focus:ring-[#6AA8A0]',
+          }
+        }}
+      />
+
+      <Link href="/" className="mt-6 text-sm text-[#6AA8A0] hover:text-[#A0CECC] transition-colors">
+        ← Back to timbermap.com
+      </Link>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
