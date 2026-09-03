@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { SignInButton } from '@clerk/nextjs'
+import { SignInButton, UserButton, useUser } from '@clerk/nextjs'
 
 interface RequiredVectorInput {
   label: string
@@ -34,6 +34,7 @@ const OUTPUT_DESCRIPTIONS: Record<string, string> = {
 
 export default function ModelDetailPage() {
   const { slug } = useParams<{ slug: string }>()
+  const { isSignedIn, isLoaded } = useUser()
   const [model, setModel] = useState<PublicModel | null | 'notfound'>(null)
 
   useEffect(() => {
@@ -44,11 +45,13 @@ export default function ModelDetailPage() {
       .catch(() => setModel('notfound'))
   }, [slug])
 
+  const backHref = isSignedIn ? '/dashboard/catalog' : '/models'
+
   if (model === 'notfound') {
     return (
       <div className="min-h-screen bg-[#F7F8F6] flex flex-col items-center justify-center px-6 text-center">
         <p className="text-gray-500 mb-4">Model not found.</p>
-        <Link href="/models" className="text-[#3D7A72] font-medium hover:underline">← Back to catalog</Link>
+        <Link href={backHref} className="text-[#3D7A72] font-medium hover:underline">← Back to catalog</Link>
       </div>
     )
   }
@@ -57,11 +60,18 @@ export default function ModelDetailPage() {
     <div className="min-h-screen bg-[#F7F8F6]">
       <nav className="border-b border-gray-100 bg-white">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="font-semibold text-[#2C5F45] text-lg tracking-wide">Timbermap</Link>
-          <Link href="/models"
-            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#2C5F45] transition-colors">
-            ← All models
+          <Link href={isSignedIn ? '/dashboard' : '/'} className="font-semibold text-[#2C5F45] text-lg tracking-wide">
+            Timbermap
           </Link>
+          {isLoaded && (
+            <div className="flex items-center gap-4">
+              <Link href={backHref}
+                className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#2C5F45] transition-colors">
+                {isSignedIn ? '← Back to your catalog' : '← All models'}
+              </Link>
+              {isSignedIn && <UserButton />}
+            </div>
+          )}
         </div>
       </nav>
 

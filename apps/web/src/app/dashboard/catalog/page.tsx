@@ -294,6 +294,7 @@ export default function CatalogPage() {
   const [upgradeModel, setUpgradeModel] = useState<CatalogModel | null>(null)
   const [contactOpen, setContactOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [tier, setTier] = useState<'all' | 'free' | 'pro'>('all')
 
   async function load() {
     if (!user) return
@@ -399,6 +400,22 @@ export default function CatalogPage() {
         )}
       </div>
 
+      {/* Tier filter */}
+      <div className="flex gap-1.5 bg-white border border-gray-200 rounded-xl p-1 w-fit mb-7">
+        {([
+          { key: 'all',  label: `All (${models.length})` },
+          { key: 'free', label: `Free (${models.filter(m => m.is_free).length})` },
+          { key: 'pro',  label: `Pro (${models.filter(m => !m.is_free).length})` },
+        ] as const).map(f => (
+          <button key={f.key} onClick={() => setTier(f.key)}
+            className={`cursor-pointer px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              tier === f.key ? 'bg-[#3D7A72] text-white' : 'text-gray-500 hover:bg-gray-50'
+            }`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* No search results */}
       {q && pro.length === 0 && free.length === 0 && (
         <div className="bg-white rounded-2xl border border-dashed border-gray-200 px-6 py-12 text-center mb-4">
@@ -410,7 +427,7 @@ export default function CatalogPage() {
       <div className="space-y-8">
 
         {/* ── FREE section — shown first ──────────────────────────────────── */}
-        {(free.length > 0 || !q) && (
+        {tier !== 'pro' && (free.length > 0 || !q) && (
         <div>
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
@@ -451,7 +468,7 @@ export default function CatalogPage() {
         )}
 
         {/* ── PRO section — de-emphasized, below Free ─────────────────────── */}
-        {(pro.length > 0 || !q) && (
+        {tier !== 'free' && (pro.length > 0 || !q) && (
         <div>
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
