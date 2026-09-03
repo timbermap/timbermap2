@@ -15,6 +15,8 @@ interface CatalogModel {
   is_visible: boolean
   upgrade_requested: boolean
   sample_image_url: string | null
+  required_gsd_cm: number | null
+  image_type_note: string | null
 }
 
 const PIPELINE_LABELS: Record<string, string> = {
@@ -167,7 +169,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ── Model row — always expanded, no accordion ───────────────────────────────
+// ── Model card — visual grid, thumbnail-first ───────────────────────────────
 function ModelCard({
   model, onActivate, onRequestUpgrade, onToggleVisibility,
   activating, toggling,
@@ -179,20 +181,27 @@ function ModelCard({
   activating: boolean
   toggling: boolean
 }) {
-  const statusBadge = model.has_access ? (
-    <span className="inline-flex items-center gap-1 bg-[#EEF7F6] text-[#3D7A72] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#A0CECC]/50 whitespace-nowrap">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>
-      Active
-    </span>
-  ) : model.upgrade_requested ? (
-    <span className="inline-flex items-center gap-1 bg-[#FBF6EA] text-[#96814A] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#E6D9AE] whitespace-nowrap">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>
-      Pending
+  const tierBadge = model.is_free ? (
+    <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur text-[#2A5750] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#A0CECC]/50 shadow-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>Free
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-400 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"/>
-      Inactive
+    <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur text-[#96814A] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#E6D9AE] shadow-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>Pro
+    </span>
+  )
+
+  const statusBadge = model.has_access ? (
+    <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur text-[#3D7A72] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#A0CECC]/50 shadow-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#3D7A72] inline-block"/>Active
+    </span>
+  ) : model.upgrade_requested ? (
+    <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur text-[#96814A] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#E6D9AE] shadow-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#C9AD6C] inline-block"/>Pending
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur text-gray-400 text-[11px] font-bold px-2 py-0.5 rounded-full border border-gray-200 shadow-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"/>Inactive
     </span>
   )
 
@@ -235,37 +244,45 @@ function ModelCard({
     </button>
   )
 
+  const locked = !model.has_access
+
   return (
-    <div className={`rounded-2xl border bg-white px-5 py-3.5 grid grid-cols-1 md:grid-cols-[minmax(160px,1.3fr)_minmax(0,2fr)_auto_auto] gap-x-5 gap-y-2 md:items-center transition-colors hover:border-gray-200 hover:shadow-sm ${
+    <div className={`rounded-2xl border bg-white overflow-hidden flex flex-col transition-all hover:shadow-md hover:-translate-y-0.5 ${
       model.has_access ? 'border-[#A0CECC]/60' : 'border-gray-100'
     } ${!model.is_visible && model.has_access ? 'opacity-60' : ''}`}>
 
-      {/* Thumbnail + name + pipeline */}
-      <div className="min-w-0 flex items-center gap-3">
+      {/* Thumbnail */}
+      <Link href={`/models/${model.slug}`} className="relative block aspect-[16/8] bg-gray-50">
         {model.sample_image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={model.sample_image_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>
+          <img src={model.sample_image_url} alt="" className={`w-full h-full object-cover ${locked ? 'saturate-[.5] brightness-[.9]' : ''}`}/>
         ) : (
-          <div className="w-11 h-11 rounded-lg flex-shrink-0 bg-gray-50 border border-gray-100 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300">
+          <div className="w-full h-full flex items-center justify-center bg-gray-50">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-gray-300">
               <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1 2 0 1 1 0 0 1-2 0Z" clipRule="evenodd"/>
             </svg>
           </div>
         )}
-        <div className="min-w-0">
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between gap-2">
+          {tierBadge}
+          {statusBadge}
+        </div>
+      </Link>
+
+      {/* Body */}
+      <div className="p-4 flex flex-col gap-2 flex-1">
+        <div>
           <Link href={`/models/${model.slug}`}
-            className="font-medium text-[#1A2624] text-sm truncate hover:text-[#3D7A72] hover:underline block">
+            className="font-semibold text-[#1A2624] text-sm hover:text-[#3D7A72] hover:underline block">
             {model.name}
           </Link>
-          <p className="text-xs text-gray-400 truncate">{PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}</p>
+          <p className="text-[11px] text-[#6AA8A0] font-semibold uppercase tracking-wide -mt-0.5">
+            {PIPELINE_LABELS[model.pipeline_type] || model.pipeline_type}
+          </p>
         </div>
-      </div>
-
-      {/* Description + output tags */}
-      <div className="min-w-0">
-        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{model.description}</p>
+        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 flex-1">{model.description}</p>
         {model.output_types && model.output_types.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {model.output_types.map((t, i) => (
               <span key={`${t}-${i}`} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-mono">
                 {OUTPUT_LABELS[t] || t}
@@ -273,13 +290,13 @@ function ModelCard({
             ))}
           </div>
         )}
+        <div className="flex items-center justify-between pt-2.5 mt-auto border-t border-gray-50">
+          <span className="text-[11px] text-gray-400 truncate">
+            {model.required_gsd_cm ? `${model.required_gsd_cm}cm/px GSD` : model.image_type_note || ' '}
+          </span>
+          {action}
+        </div>
       </div>
-
-      {/* Status */}
-      <div className="justify-self-start md:justify-self-end">{statusBadge}</div>
-
-      {/* Action */}
-      <div className="justify-self-start md:justify-self-end">{action}</div>
     </div>
   )
 }
@@ -450,7 +467,7 @@ export default function CatalogPage() {
               <p className="text-gray-400 text-sm">No pro models available yet.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pro.map(m => (
                 <ModelCard
                   key={m.id}
@@ -491,7 +508,7 @@ export default function CatalogPage() {
               <p className="text-gray-400 text-sm">No free models available yet.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {free.map(m => (
                 <ModelCard
                   key={m.id}

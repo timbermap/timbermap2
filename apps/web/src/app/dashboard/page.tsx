@@ -171,19 +171,6 @@ function VectorModal({ vectorId, filename, userId, onClose }: { vectorId: string
   )
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, href }: { label: string; value: string | number; sub: string; href?: string }) {
-  const inner = (
-    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm h-full hover:shadow-md hover:border-[#A0CECC] transition-all">
-      <p className="text-xs font-medium text-gray-400 mb-3">{label}</p>
-      <p className="text-3xl font-light text-[#1C1C1C] tabular-nums mb-1">{value}</p>
-      <p className="text-xs text-gray-400">{sub}</p>
-    </div>
-  )
-  if (href) return <Link href={href} className="cursor-pointer block">{inner}</Link>
-  return <div>{inner}</div>
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user, isLoaded } = useUser()
@@ -260,11 +247,56 @@ export default function Dashboard() {
     .reduce((s, i) => s + (i.area_ha || 0), 0)
   const totalHa           = readyImages.reduce((s, i) => s + (i.area_ha || 0), 0)
 
-  const displayJobs       = jobs.slice(0, 5)
   const activeModels      = models.filter(m => m.has_access)
-  const recentReadyImages = readyImages.slice(0, 3)
   const isNewAccount      = images.length === 0 && vectors.length === 0
-  const recentVectors     = vectors.filter(v => v.status === 'ready').slice(0, 3)
+
+  // ── Unified activity feed — uploads + jobs merged chronologically ──
+  type FeedEntry = {
+    key: string; title: string; meta: string; created_at: string
+    status: { label: string; cls: string }; icon: 'job' | 'ingest'
+    thumb?: string; onClick?: () => void
+  }
+  const feedEntries: FeedEntry[] = [
+    ...jobs.map(job => {
+      const isIngest = ['raster_ingest', 'vector_ingest'].includes(job.type)
+      const dur = formatDuration(job.started_at, job.finished_at)
+      const st = STATUS[job.status] || { label: job.status, cls: 'bg-gray-50 text-gray-400' }
+      const title = job.model_name || TYPE_LABEL[job.type] || job.type
+      return {
+        key: `job-${job.id}`,
+        title: job.image_filename ? `${title} — ${job.image_filename}` : title,
+        meta: [formatRelative(job.created_at), dur].filter(Boolean).join(' · '),
+        created_at: job.created_at, status: st, icon: isIngest ? 'ingest' as const : 'job' as const,
+      }
+    }),
+    ...images.map(img => ({
+      key: `img-${img.id}`,
+      title: `Uploaded ${img.filename}`,
+      meta: formatRelative(img.created_at),
+      created_at: img.created_at,
+      status: img.status === 'ready' ? { label: 'Ready', cls: 'bg-[#EEF7F6] text-[#3D7A72]' } : { label: img.status, cls: 'bg-amber-50 text-amber-600' },
+      icon: 'ingest' as const,
+      thumb: thumbnails[img.id],
+      onClick: thumbnails[img.id] ? () => setImageModal({ id: img.id, url: thumbnails[img.id], filename: img.filename }) : undefined,
+    })),
+    ...vectors.map(v => ({
+      key: `vec-${v.id}`,
+      title: `Uploaded ${v.filename}`,
+      meta: formatRelative(v.created_at),
+      created_at: v.created_at,
+      status: v.status === 'ready' ? { label: 'Ready', cls: 'bg-[#EEF7F6] text-[#3D7A72]' } : { label: v.status, cls: 'bg-amber-50 text-amber-600' },
+      icon: 'ingest' as const,
+      thumb: v.status === 'ready' && user ? `${API}/vectors/${v.id}/preview?clerk_id=${user.id}` : undefined,
+      onClick: v.status === 'ready' ? () => setVectorModal({ id: v.id, filename: v.filename }) : undefined,
+    })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 7)
+
+  // ── Hero state — what matters most right now ──
+  const activeJob   = jobs.find(j => j.status === 'running' || j.status === 'queued')
+  const storagePct  = accountInfo && storageLimitBytes ? (accountInfo.storage_bytes / storageLimitBytes) * 100 : 0
+  const jobsPct     = accountInfo && jobsLimit ? (accountInfo.jobs_this_week / jobsLimit) * 100 : 0
+  const nearLimit   = storagePct >= 90 || jobsPct >= 90
+  const heroState: 'warning' | 'processing' | 'ready' = nearLimit ? 'warning' : activeJob ? 'processing' : 'ready'
 
   if (!isLoaded || loading) return (
     <div className="w-full">
@@ -348,38 +380,108 @@ export default function Dashboard() {
 
       {!isNewAccount && (
       <>
-      {/* ── Row 1: Stats ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard
-          label="Images"
-          value={readyImages.length}
-          sub={imagesThisWeek > 0 ? `${imagesThisWeek} this week` : 'none this week'}
-          href="/dashboard/images"
-        />
-        <StatCard
-          label="Vectors"
-          value={vectors.length}
-          sub={vectorsThisWeek > 0 ? `${vectorsThisWeek} this week` : 'none this week'}
-          href="/dashboard/vectors"
-        />
-        <StatCard
-          label="Jobs completed"
-          value={completedJobsWeek}
-          sub="this week"
-          href="/dashboard/jobs"
-        />
-        <StatCard
-          label="Hectares processed"
-          value={totalHa > 0 ? formatHa(totalHa) : '—'}
-          sub={haThisWeek > 0 ? `${formatHa(haThisWeek)} ha this week` : 'total ha'}
-          href="/dashboard/stats"
-        />
+      {/* ── Hero — what to do next, adapts to account state ── */}
+      {heroState === 'warning' ? (
+        <div className="rounded-2xl border border-[#F0CBA8] bg-[#FCEFE4] p-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-[#1A2624]">You&apos;re close to your plan limit</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {storagePct >= 90 ? `Storage is at ${Math.round(storagePct)}% — ` : `You've used ${Math.round(jobsPct)}% of this week's jobs — `}
+              clean something up or upgrade for more room.
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link href="/dashboard/images" className="cursor-pointer bg-white border border-gray-200 text-gray-600 text-xs font-semibold px-3.5 py-2 rounded-xl hover:bg-gray-50 transition-colors">Manage storage</Link>
+            <button onClick={() => setUpgradeOpen(true)} className="cursor-pointer bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors">Upgrade →</button>
+          </div>
+        </div>
+      ) : heroState === 'processing' && activeJob ? (
+        <div className="rounded-2xl border border-[#A0CECC]/50 bg-gradient-to-br from-[#EEF7F6] to-white p-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-[#1A2624]">
+              {activeJob.status === 'running' ? 'Processing your job' : 'Job queued'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {activeJob.model_name || TYPE_LABEL[activeJob.type] || activeJob.type}
+              {activeJob.image_filename && ` — ${activeJob.image_filename}`}
+            </p>
+          </div>
+          <Link href="/dashboard/jobs" className="cursor-pointer flex-shrink-0 bg-white border border-[#A0CECC]/60 text-[#3D7A72] text-xs font-semibold px-3.5 py-2 rounded-xl hover:bg-[#EEF7F6] transition-colors">View jobs →</Link>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-[#A0CECC]/50 bg-gradient-to-br from-[#EEF7F6] to-white p-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-[#1A2624]">Ready when you are</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {imagesThisWeek > 0 ? `${imagesThisWeek} image${imagesThisWeek === 1 ? '' : 's'} uploaded this week, nothing queued right now.` : 'Nothing queued right now — upload imagery or pick a model to get started.'}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link href="/dashboard/images" className="cursor-pointer bg-white border border-gray-200 text-gray-600 text-xs font-semibold px-3.5 py-2 rounded-xl hover:bg-gray-50 transition-colors">Upload imagery</Link>
+            <Link href="/dashboard/catalog" className="cursor-pointer bg-[#3D7A72] hover:bg-[#2A5750] text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors">Browse models →</Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mini stats strip ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-100 border border-gray-100 rounded-2xl overflow-hidden mb-4">
+        <Link href="/dashboard/images" className="cursor-pointer bg-white px-5 py-3.5 hover:bg-gray-50/70 transition-colors">
+          <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Images</p>
+          <p className="text-xl font-light text-[#1C1C1C] tabular-nums mt-0.5">{readyImages.length}{imagesThisWeek > 0 && <span className="text-xs text-[#6AA8A0] font-semibold ml-1.5">+{imagesThisWeek}</span>}</p>
+        </Link>
+        <Link href="/dashboard/vectors" className="cursor-pointer bg-white px-5 py-3.5 hover:bg-gray-50/70 transition-colors">
+          <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Vectors</p>
+          <p className="text-xl font-light text-[#1C1C1C] tabular-nums mt-0.5">{vectors.length}{vectorsThisWeek > 0 && <span className="text-xs text-[#6AA8A0] font-semibold ml-1.5">+{vectorsThisWeek}</span>}</p>
+        </Link>
+        <Link href="/dashboard/jobs" className="cursor-pointer bg-white px-5 py-3.5 hover:bg-gray-50/70 transition-colors">
+          <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Jobs done</p>
+          <p className="text-xl font-light text-[#1C1C1C] tabular-nums mt-0.5">{completedJobsWeek}<span className="text-xs text-gray-400 font-semibold ml-1.5">this wk</span></p>
+        </Link>
+        <Link href="/dashboard/stats" className="cursor-pointer bg-white px-5 py-3.5 hover:bg-gray-50/70 transition-colors">
+          <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Hectares</p>
+          <p className="text-xl font-light text-[#1C1C1C] tabular-nums mt-0.5">{totalHa > 0 ? formatHa(totalHa) : '—'}</p>
+        </Link>
       </div>
 
-      {/* ── Row 2: Active models + Recent jobs ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      {/* ── Unified activity feed ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Recent activity</p>
+          <Link href="/dashboard/jobs" className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] transition-colors font-medium">
+            View all →
+          </Link>
+        </div>
+        {feedEntries.length === 0 ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm text-gray-300">No activity yet</p>
+          </div>
+        ) : (
+          feedEntries.map(entry => {
+            const Tag = entry.onClick ? 'button' : 'div'
+            return (
+              <Tag key={entry.key} onClick={entry.onClick}
+                className={`w-full flex items-center gap-4 px-6 py-3.5 border-b border-gray-50 last:border-0 transition-colors text-left ${entry.onClick ? 'cursor-pointer hover:bg-gray-50/50' : ''}`}>
+                {entry.thumb ? (
+                  <img src={entry.thumb} alt="" className="w-9 h-9 rounded-xl object-cover flex-shrink-0 border border-gray-100"/>
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-[#1E3835] flex items-center justify-center flex-shrink-0">
+                    {entry.icon === 'ingest' ? <IngestIcon /> : <JobIcon />}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{entry.title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{entry.meta}</p>
+                </div>
+                <span className={`flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${entry.status.cls}`}>{entry.status.label}</span>
+              </Tag>
+            )
+          })
+        )}
+      </div>
 
-        {/* Active models */}
+      {/* ── Lower row: Active models + Plan usage ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[2.1fr_1fr] gap-4">
+
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Active models</p>
@@ -412,135 +514,15 @@ export default function Dashboard() {
                   </span>
                 </div>
               ))}
-              {!isPro && (
-                <div className="pt-3">
-                  <button onClick={() => setUpgradeOpen(true)}
-                    className="cursor-pointer w-full text-xs text-[#3D7A72] border border-[#A0CECC]/60 hover:bg-[#EEF7F6] rounded-xl py-2 font-medium transition-colors">
-                    Upgrade to Pro →
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
-          {activeModels.length === 0 && !isPro && (
+          {!isPro && (
             <div className="mt-3">
               <button onClick={() => setUpgradeOpen(true)}
                 className="cursor-pointer w-full text-xs text-[#3D7A72] border border-[#A0CECC]/60 hover:bg-[#EEF7F6] rounded-xl py-2 font-medium transition-colors">
                 Upgrade to Pro →
               </button>
-            </div>
-          )}
-        </div>
-
-        {/* Recent jobs */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Recent jobs</p>
-            <Link href="/dashboard/jobs" className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] transition-colors font-medium">
-              View all →
-            </Link>
-          </div>
-          {displayJobs.length === 0 ? (
-            <div className="px-6 py-10 text-center">
-              <p className="text-sm text-gray-300">No jobs yet</p>
-            </div>
-          ) : (
-            displayJobs.map(job => {
-              const isIngest = ['raster_ingest','vector_ingest'].includes(job.type)
-              const dur = formatDuration(job.started_at, job.finished_at)
-              const st = STATUS[job.status] || { label: job.status, cls: 'bg-gray-50 text-gray-400' }
-              const title = job.model_name || TYPE_LABEL[job.type] || job.type
-              const subtitle = [formatRelative(job.created_at), dur].filter(Boolean).join(' · ')
-              return (
-                <div key={job.id} className="flex items-center gap-4 px-6 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-                  <div className="w-9 h-9 rounded-xl bg-[#1E3835] flex items-center justify-center flex-shrink-0">
-                    {isIngest ? <IngestIcon /> : <JobIcon />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {title}
-                      {job.image_filename && <span className="text-gray-400 font-normal"> — {job.image_filename}</span>}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
-                  </div>
-                  <span className={`flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${st.cls}`}>{st.label}</span>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </div>
-
-      {/* ── Row 3: Recent images + Recent vectors + Resources ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Recent images */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Recent images</p>
-            <Link href="/dashboard/images" className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] transition-colors font-medium">
-              View all →
-            </Link>
-          </div>
-          {recentReadyImages.length === 0 ? (
-            <div className="py-6 text-center">
-              <p className="text-sm text-gray-300 mb-2">No images yet</p>
-              <Link href="/dashboard/images" className="cursor-pointer text-xs text-[#3D7A72] font-medium hover:underline">Upload →</Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {recentReadyImages.map(img => (
-                <button key={img.id}
-                  onClick={() => thumbnails[img.id] && setImageModal({ id: img.id, url: thumbnails[img.id], filename: img.filename })}
-                  className={`cursor-pointer aspect-square rounded-xl bg-[#F4F9F8] border border-[#A0CECC]/20 hover:border-[#A0CECC] overflow-hidden flex items-center justify-center transition-colors ${thumbnails[img.id] ? 'hover:opacity-90' : ''}`}
-                  title={img.filename}>
-                  {thumbnails[img.id] ? (
-                    <img src={thumbnails[img.id]} alt={img.filename} className="w-full h-full object-contain"/>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6 text-[#A0CECC]">
-                      <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909.47.47a.75.75 0 1 1-1.06 1.06L6.53 8.091a.75.75 0 0 0-1.06 0l-2.97 2.97ZM12 7a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd"/>
-                    </svg>
-                  )}
-                </button>
-              ))}
-              {Array.from({ length: Math.max(0, 3 - recentReadyImages.length) }).map((_, i) => (
-                <div key={`empty-${i}`} className="aspect-square rounded-xl bg-gray-50 border border-dashed border-gray-200"/>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Recent vectors */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Recent vectors</p>
-            <Link href="/dashboard/vectors" className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] transition-colors font-medium">
-              View all →
-            </Link>
-          </div>
-          {recentVectors.length === 0 ? (
-            <div className="py-6 text-center">
-              <p className="text-sm text-gray-300 mb-2">No vectors yet</p>
-              <Link href="/dashboard/vectors" className="cursor-pointer text-xs text-[#3D7A72] font-medium hover:underline">Upload →</Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {recentVectors.map(v => (
-                <button key={v.id}
-                  onClick={() => setVectorModal({ id: v.id, filename: v.filename })}
-                  className="cursor-pointer aspect-square rounded-xl bg-[#F4F9F8] border border-[#A0CECC]/20 hover:border-[#A0CECC] overflow-hidden flex items-center justify-center transition-colors hover:opacity-90 p-1"
-                  title={v.filename}>
-                  <img
-                    src={`${API}/vectors/${v.id}/preview?clerk_id=${user!.id}`}
-                    alt={v.filename}
-                    className="w-full h-full object-contain"
-                  />
-                </button>
-              ))}
-              {Array.from({ length: Math.max(0, 3 - recentVectors.length) }).map((_, i) => (
-                <div key={`empty-${i}`} className="aspect-square rounded-xl bg-gray-50 border border-dashed border-gray-200"/>
-              ))}
             </div>
           )}
         </div>
@@ -562,25 +544,18 @@ export default function Dashboard() {
                 label="Storage"
                 usedLabel={fmtBytes(accountInfo.storage_bytes)}
                 limitLabel={storageLimitBytes !== null ? fmtBytes(storageLimitBytes) : 'Unlimited'}
-                pct={storageLimitBytes ? (accountInfo.storage_bytes / storageLimitBytes) * 100 : 0}
+                pct={storagePct}
                 unlimited={storageLimitBytes === null}
               />
               <UsageBar
                 label="Jobs this week"
                 usedLabel={String(accountInfo.jobs_this_week)}
                 limitLabel={jobsLimit !== null ? String(jobsLimit) : 'Unlimited'}
-                pct={jobsLimit ? (accountInfo.jobs_this_week / jobsLimit) * 100 : 0}
+                pct={jobsPct}
                 unlimited={jobsLimit === null}
               />
             </div>
           )}
-
-          <div className="grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-gray-50">
-            <MiniStat label="Images" value={readyImages.length}/>
-            <MiniStat label="Vectors" value={vectors.length}/>
-            <MiniStat label="Active models" value={activeModels.length}/>
-            <MiniStat label="Ha processed" value={totalHa > 0 ? formatHa(totalHa) : 0}/>
-          </div>
         </div>
 
       </div>
@@ -613,14 +588,6 @@ function UsageBar({ label, usedLabel, limitLabel, pct, unlimited }: {
   )
 }
 
-function MiniStat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="bg-gray-50 rounded-xl px-3.5 py-3">
-      <p className="text-lg font-light text-[#1C1C1C] tabular-nums leading-none mb-1">{value}</p>
-      <p className="text-xs text-gray-400">{label}</p>
-    </div>
-  )
-}
 function fmtBytes(b: number) {
   if (b > 1e9) return (b / 1e9).toFixed(1) + ' GB'
   if (b > 1e6) return (b / 1e6).toFixed(1) + ' MB'
