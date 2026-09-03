@@ -253,7 +253,7 @@ function ModelCard({
           </div>
         )}
         <div className="min-w-0">
-          <Link href={`/models/${model.slug}`} target="_blank"
+          <Link href={`/models/${model.slug}`}
             className="font-medium text-[#1A2624] text-sm truncate hover:text-[#3D7A72] hover:underline block">
             {model.name}
           </Link>
