@@ -109,7 +109,7 @@ class SetSuperadminRequest(BaseModel):
     is_superadmin: bool
 
 class SetPlanRequest(BaseModel):
-    tier: str  # "basic" | "active" | "custom"
+    tier: str  # "basic" | "pro" | "custom"
 
 class SetPlanExpirationRequest(BaseModel):
     plan_expires_at: Optional[str] = None  # "YYYY-MM-DD", or null to clear it
@@ -446,10 +446,10 @@ def delete_user_account(target_clerk_id: str, admin_clerk_id: str = Depends(requ
 
 @router.put("/users/{target_clerk_id}/plan")
 def set_plan(target_clerk_id: str, req: SetPlanRequest, _: str = Depends(require_superadmin)):
-    """Tier is fully manual now — superadmin picks basic/active/custom directly,
+    """Tier is fully manual now — superadmin picks basic/pro/custom directly,
     independent of what models the account happens to have granted."""
-    if req.tier not in ("basic", "active", "custom"):
-        raise HTTPException(400, "tier must be 'basic', 'active' or 'custom'")
+    if req.tier not in ("basic", "pro", "custom"):
+        raise HTTPException(400, "tier must be 'basic', 'pro' or 'custom'")
     ok = database.superadmin_set_plan(target_clerk_id, req.tier)
     if not ok: raise HTTPException(404, "User not found")
     return {"updated": True, "clerk_id": target_clerk_id, "plan": req.tier}
@@ -473,7 +473,7 @@ def get_tier_limits(_: str = Depends(require_superadmin)):
 
 @router.put("/tier-limits/{tier}")
 def set_tier_limit(tier: str, req: SetTierLimitRequest, _: str = Depends(require_superadmin)):
-    if tier not in ("basic", "active", "custom"):
+    if tier not in ("basic", "pro", "custom"):
         raise HTTPException(400, "Unknown tier")
     ok = database.set_tier_limit(tier, req.storage_limit_gb, req.weekly_job_limit)
     if not ok: raise HTTPException(404, "Tier not found")

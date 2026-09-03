@@ -247,7 +247,7 @@ export default function Dashboard() {
   const name    = user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'there'
   const isPro   = models.some(m => !m.is_free && m.has_access)
   const tier = accountInfo?.account_plan || 'basic'
-  const planLabel = tier === 'custom' ? 'Custom account' : tier === 'active' ? 'Active account' : 'Basic account'
+  const planLabel = tier === 'custom' ? 'Custom account' : tier === 'pro' ? 'Pro account' : 'Basic account'
   const storageLimitBytes = accountInfo?.storage_limit_gb != null ? accountInfo.storage_limit_gb * 1e9 : null
   const jobsLimit = accountInfo?.weekly_job_limit ?? null
 
@@ -551,7 +551,7 @@ export default function Dashboard() {
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Your plan</p>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${
               tier === 'custom' ? 'bg-violet-50 text-violet-600 border border-violet-200'
-              : tier === 'active' ? 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]'
+              : tier === 'pro' ? 'bg-[#FBF6EA] text-[#96814A] border border-[#E6D9AE]'
               : 'bg-[#EEF7F6] text-[#2A5750] border border-[#A0CECC]/40'
             }`}>{tier}</span>
           </div>

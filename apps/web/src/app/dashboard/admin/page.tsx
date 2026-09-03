@@ -49,10 +49,10 @@ type UserDetail = User & {
 
 // Tier is a plain manually-set field now (accounts.plan) — superadmin picks
 // it directly, independent of what models happen to be granted.
-const tierLabel: Record<string, string> = { custom: 'Custom', active: 'Active', basic: 'Basic' }
+const tierLabel: Record<string, string> = { custom: 'Custom', pro: 'Pro', basic: 'Basic' }
 const tierClass: Record<string, string> = {
   custom: 'bg-violet-50 text-violet-600 border-violet-200',
-  active: 'bg-[#EEF7F6] text-[#3D7A72] border-[#A0CECC]',
+  pro:    'bg-[#EEF7F6] text-[#3D7A72] border-[#A0CECC]',
   basic:  'bg-gray-100 text-gray-500 border-gray-200',
 }
 function StorageBar({ bytes, limitGb }: { bytes: number; limitGb: number | null }) {
@@ -776,7 +776,7 @@ function UsersTab({ clerkId, api }: { clerkId: string; api: string }) {
                   onChange={e => setTier(selected, e.target.value)}
                   className={`text-xs font-medium px-2.5 py-1.5 rounded-lg border cursor-pointer disabled:opacity-50 ${tierClass[selected.account_plan] || 'border-gray-200'}`}>
                   <option value="basic">Basic</option>
-                  <option value="active">Active</option>
+                  <option value="pro">Pro</option>
                   <option value="custom">Custom</option>
                 </select>
                 {savingTier && <SpinIcon />}

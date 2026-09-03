@@ -90,10 +90,57 @@ def ensure_user(clerk_id: str, email: str, username: str):
             RETURNING id
         """, (clerk_id, email, username, account_id))
         row = cur.fetchone()
+        # Free models are a base entitlement, not something anyone has to
+        # activate — grant them immediately so they're already active/visible.
+        cur.execute("""
+            INSERT INTO user_model_permissions (user_id, model_id)
+            SELECT %s, id FROM models WHERE is_free = true AND is_active = true
+            ON CONFLICT DO NOTHING
+        """, (row["id"],))
     conn.commit()
     cur.close()
     conn.close()
     return row['id']
+
+def get_quota_status(clerk_id: str):
+    """Account-wide plan limits vs. current usage — the numbers that gate
+    uploads and job runs. Returns None if the user doesn't exist."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT u.account_id, a.plan, a.storage_limit_gb_override, a.weekly_job_limit_override
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
+    me = cur.fetchone()
+    if not me:
+        cur.close(); conn.close()
+        return None
+
+    cur.execute("SELECT storage_limit_gb, weekly_job_limit FROM tier_limits WHERE tier = %s", (me["plan"],))
+    tier_default = cur.fetchone() or {"storage_limit_gb": None, "weekly_job_limit": None}
+    storage_limit_gb = me["storage_limit_gb_override"] if me["storage_limit_gb_override"] is not None else tier_default["storage_limit_gb"]
+    weekly_job_limit = me["weekly_job_limit_override"] if me["weekly_job_limit_override"] is not None else tier_default["weekly_job_limit"]
+
+    cur.execute("""
+        SELECT
+            (
+                (SELECT COALESCE(SUM(i.filesize), 0) FROM images  i JOIN users u2 ON u2.id = i.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(v.filesize), 0) FROM vectors v JOIN users u2 ON u2.id = v.owner_id WHERE u2.account_id = %(aid)s) +
+                (SELECT COALESCE(SUM(jo.file_size_bytes), 0) FROM job_outputs jo JOIN jobs j ON j.id = jo.job_id JOIN users u2 ON u2.id = j.owner_id WHERE u2.account_id = %(aid)s)
+            ) AS storage_bytes,
+            (SELECT COUNT(*) FROM jobs j JOIN users u2 ON u2.id = j.owner_id
+             WHERE u2.account_id = %(aid)s AND j.created_at > now() - interval '7 days') AS jobs_this_week
+    """, {"aid": me["account_id"]})
+    usage = cur.fetchone()
+    cur.close(); conn.close()
+    return {
+        "storage_limit_gb": storage_limit_gb,
+        "storage_bytes": usage["storage_bytes"],
+        "weekly_job_limit": weekly_job_limit,
+        "jobs_this_week": usage["jobs_this_week"],
+    }
+
 
 def get_user_id(clerk_id: str):
     conn = get_conn()

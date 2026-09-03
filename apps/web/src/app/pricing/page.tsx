@@ -1,6 +1,5 @@
 'use client'
 import Link from 'next/link'
-import { SignUpButton } from '@clerk/nextjs'
 
 const TIERS = [
   {
@@ -14,16 +13,17 @@ const TIERS = [
     highlight: false,
     features: [
       'Your own workspace — upload and process independently',
-      'Free AI models (Gap & Clearing Detection)',
+      'Gap & Clearing Detection — free AI model, active from day one',
       '10 GB storage',
       'Up to 5 processing jobs per week',
       'Interactive map with satellite, terrain and street basemaps',
       'GeoJSON, Shapefile and COG exports',
+      "Can't create or join a team",
     ],
   },
   {
-    id: 'active',
-    name: 'Active',
+    id: 'pro',
+    name: 'Pro',
     price: 'Talk to us',
     period: '',
     tagline: 'For teams running AI models on real operations.',
@@ -32,7 +32,7 @@ const TIERS = [
     highlight: true,
     features: [
       'Everything in Basic',
-      'Full model catalog — Tree Crown Detection, Tillage Line Detection, Plantation Fault Detection',
+      'Full model catalog — Tree Crown Detection, Tillage Line Detection, Plantation Fault Detection, Automatic Stand Delineation',
       '50 GB storage, pooled across your whole team',
       'Invite teammates under one account — each keeps their own workspace',
       'You control which models each teammate can access',
@@ -49,7 +49,7 @@ const TIERS = [
     ctaLabel: 'Contact us',
     highlight: false,
     features: [
-      'Everything in Active',
+      'Everything in Pro',
       'Unlimited storage',
       'Custom model configuration & thresholds',
       'Volume-based pricing',
@@ -98,9 +98,7 @@ export default function PricingPage() {
               {t.period && <span className="pr-price-period">{t.period}</span>}
             </div>
             {t.cta === 'signup' ? (
-              <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-                <button className={t.highlight ? 'pr-btn-primary' : 'pr-btn-outline'}>{t.ctaLabel}</button>
-              </SignUpButton>
+              <Link href="/sign-up" className={t.highlight ? 'pr-btn-primary' : 'pr-btn-outline'}>{t.ctaLabel}</Link>
             ) : (
               <a href="#contact-note" className={t.highlight ? 'pr-btn-primary' : 'pr-btn-outline'}>{t.ctaLabel}</a>
             )}

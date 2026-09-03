@@ -54,7 +54,17 @@ async def clerk_webhook(request: Request):
             INSERT INTO users (clerk_id, email, username, account_id)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (clerk_id) DO NOTHING
+            RETURNING id
         """, (clerk_id, email, username, account_id))
+        new_user = cur.fetchone()
+        # Free models are a base entitlement, not something anyone has to
+        # activate — grant them immediately so they're already active/visible.
+        if new_user:
+            cur.execute("""
+                INSERT INTO user_model_permissions (user_id, model_id)
+                SELECT %s, id FROM models WHERE is_free = true AND is_active = true
+                ON CONFLICT DO NOTHING
+            """, (new_user["id"],))
         conn.commit()
         cur.close()
         conn.close()

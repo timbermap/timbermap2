@@ -18,7 +18,7 @@ from superadmin import router as superadmin_router, models_router
 from account import router as account_router
 
 from database import (
-    ensure_user, get_user_id, get_conn,
+    ensure_user, get_user_id, get_conn, get_quota_status,
     insert_image, insert_vector,
     get_images, get_vectors, get_jobs,
     insert_job,
@@ -147,6 +147,17 @@ def get_signed_url(req: SignedUrlRequest):
     try:
         import uuid as _uuid
         ensure_user(req.clerk_id, req.email, req.username)
+
+        quota = get_quota_status(req.clerk_id)
+        if quota and quota["storage_limit_gb"] is not None:
+            limit_bytes = quota["storage_limit_gb"] * 1e9
+            if quota["storage_bytes"] + (req.filesize or 0) > limit_bytes:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Storage limit reached ({quota['storage_limit_gb']} GB on your plan). "
+                           f"Delete something or upgrade to free up space.",
+                )
+
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
         if req.file_type == "raster":
@@ -165,6 +176,8 @@ def get_signed_url(req: SignedUrlRequest):
             method="PUT", content_type=req.content_type,
         )
         return {"url": url, "gcs_path": gcs_path, "file_id": file_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -682,6 +695,14 @@ def run_model(req: RunModelRequest):
 
         if not check_model_permission(str(user_id), req.model_id):
             raise HTTPException(status_code=403, detail="No permission to run this model")
+
+        quota = get_quota_status(req.clerk_id)
+        if quota and quota["weekly_job_limit"] is not None and quota["jobs_this_week"] >= quota["weekly_job_limit"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Weekly processing limit reached ({quota['weekly_job_limit']} jobs on your plan). "
+                       f"Try again next week or upgrade your plan.",
+            )
 
         required_input = model.get("required_vector_input")
         if isinstance(required_input, str):

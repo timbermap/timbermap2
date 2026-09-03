@@ -444,7 +444,7 @@ export default function ImagesPage() {
       {accountInfo && (
         <div className="mb-6 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
           <span className="flex-shrink-0">
-            Plan {planTier === 'custom' ? 'Custom' : planTier === 'active' ? 'Active' : 'Basic'} —{' '}
+            Plan {planTier === 'custom' ? 'Custom' : planTier === 'pro' ? 'Pro' : 'Basic'} —{' '}
             {planStorageUsedGb !== null ? planStorageUsedGb.toFixed(1) : '–'} GB usados
             {planStorageLimitGb !== null ? ` de ${planStorageLimitGb} GB` : ' (sin límite)'}
           </span>
