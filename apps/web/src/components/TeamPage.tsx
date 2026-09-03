@@ -1,6 +1,6 @@
 'use client'
 import { useUser, useOrganization, useOrganizationList, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
 
@@ -25,6 +25,8 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   const [info, setInfo]     = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState<string | null>(null)
+  const [orgActivationFailed, setOrgActivationFailed] = useState(false)
+  const attemptedOrgId = useRef<string | null>(null)
   const h: Record<string, string> = user ? { 'x-clerk-id': user.id } : {}
 
   const load = useCallback(() => {
@@ -42,10 +44,17 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   // <OrganizationProfile> hard-crashes if rendered with no active org. If
   // our DB says there should be one but Clerk's client doesn't have it
   // active yet, activate it ourselves before we ever try to render that.
+  // Guarded by a ref (not just the effect deps) because setActive isn't a
+  // stable reference across renders — without the ref this retried on
+  // every render, hammering Clerk with the same failing call forever
+  // whenever clerk_org_id pointed at an org that no longer exists there.
   useEffect(() => {
     if (!orgListLoaded || !setActive) return
-    if (!info?.clerk_org_id || organization?.id === info.clerk_org_id) return
-    setActive({ organization: info.clerk_org_id })
+    const targetId = info?.clerk_org_id
+    if (!targetId || organization?.id === targetId) return
+    if (attemptedOrgId.current === targetId) return
+    attemptedOrgId.current = targetId
+    setActive({ organization: targetId }).catch(() => setOrgActivationFailed(true))
   }, [orgListLoaded, setActive, info?.clerk_org_id, organization?.id])
   // Clerk sets the newly created org as active on its own client-side state
   // immediately — no navigation needed, just re-check our own DB once that
@@ -96,6 +105,21 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
     return (
       <div className="flex items-center gap-2 text-gray-400 py-16 justify-center text-sm">
         <SpinIcon />Setting up your team...
+      </div>
+    )
+  }
+
+  // Our DB says there should be an active org, but Clerk rejected
+  // activating it (org_id no longer exists there) — show that plainly
+  // instead of silently falling through to "create a team" (misleading,
+  // since we do have one on record) or spinning forever.
+  if (orgActivationFailed) {
+    return (
+      <div className={`max-w-lg ${compact ? 'max-h-[70vh] overflow-y-auto pr-1' : ''}`}>
+        <h1 className="text-lg font-semibold text-[#1A2624] mb-1">Team</h1>
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 text-sm text-amber-700">
+          Your account is linked to a team that no longer exists. Contact support to reset it.
+        </div>
       </div>
     )
   }
