@@ -817,11 +817,12 @@ def superadmin_delete_job_output(output_id: str):
 
 def create_team(clerk_id: str, name: str):
     """Turns the caller's personal account into a named team and makes them
-    its admin. No-op-safe: fails if they're already on a named team."""
+    its admin. No-op-safe: fails if they're already on a named team, or on
+    the free (basic) plan — teams are a paid-plan perk."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT u.id, u.account_id, a.name AS team_name
+        SELECT u.id, u.account_id, a.name AS team_name, a.plan
         FROM users u JOIN accounts a ON a.id = u.account_id
         WHERE u.clerk_id = %s
     """, (clerk_id,))
@@ -832,6 +833,9 @@ def create_team(clerk_id: str, name: str):
     if me["team_name"]:
         cur.close(); conn.close()
         return False, "Already part of a team"
+    if me["plan"] == "basic":
+        cur.close(); conn.close()
+        return False, "Upgrade your plan to create a team"
     cur.execute("UPDATE accounts SET name = %s WHERE id = %s", (name, me["account_id"]))
     cur.execute("UPDATE users SET org_role = 'admin' WHERE id = %s", (me["id"],))
     conn.commit()
@@ -907,11 +911,18 @@ def accept_team_invite(clerk_id: str, token: str):
     if invite["expires_at"] < datetime.datetime.now(datetime.timezone.utc):
         cur.close(); conn.close()
         return False, "This invite has expired"
-    cur.execute("SELECT id FROM users WHERE clerk_id = %s", (clerk_id,))
+    cur.execute("""
+        SELECT u.id, a.name AS team_name
+        FROM users u JOIN accounts a ON a.id = u.account_id
+        WHERE u.clerk_id = %s
+    """, (clerk_id,))
     me = cur.fetchone()
     if not me:
         cur.close(); conn.close()
         return False, "User not found"
+    if me["team_name"]:
+        cur.close(); conn.close()
+        return False, "You're already part of a team — leave it first to accept a different invite"
     cur.execute(
         "UPDATE users SET account_id = %s, org_role = 'member' WHERE id = %s",
         (invite["account_id"], me["id"]),
