@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { SignInButton, SignUpButton } from '@clerk/nextjs'
+import { SignInButton } from '@clerk/nextjs'
 import ContactForm from './ContactForm'
 
 interface PublicModel {
@@ -126,9 +126,7 @@ export default function Landing() {
             Upload drone or aircraft imagery of your forest plantation. Get AI-powered results — tree crown counts, inter-row spacing, fault density maps — in under an hour.
           </p>
           <div className="tm-hero-ctas">
-            <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-              <button className="tm-btn-primary">Get started →</button>
-            </SignUpButton>
+            <Link href="/sign-up" className="tm-btn-primary">Get started →</Link>
             <a href="#contact" className="tm-btn-outline">Talk to us</a>
           </div>
           <div className="tm-hero-stats">

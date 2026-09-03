@@ -3,34 +3,21 @@ import Link from 'next/link'
 
 export default function SignInPage() {
   return (
-    <div className="min-h-screen bg-[#F7F8F6] flex">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#14231C] px-6 py-16">
+      <Link href="/" className="mb-10">
+        <svg width="150" height="36" viewBox="0 0 300 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="20" fill="#6AA8A0"/>
+          <circle cx="44" cy="20" r="16" fill="#3D7A72"/>
+          <circle cx="30" cy="40" r="13" fill="#A0CECC"/>
+          <text x="68" y="28" fontFamily="'Plus Jakarta Sans',system-ui,sans-serif" fontSize="26" fontWeight="700" letterSpacing="2" fill="#F0F7F6">TIMBERMAP</text>
+          <text x="68" y="46" fontFamily="'Plus Jakarta Sans',system-ui,sans-serif" fontSize="12" fontWeight="400" fill="#6AA8A0">Powered by Forestech Uy</text>
+        </svg>
+      </Link>
 
-      {/* Left panel */}
-      <div className="hidden lg:flex w-1/2 bg-[#2C5F45] flex-col justify-between p-12">
-        <Link href="/" className="text-white font-semibold text-xl tracking-wide">
-          Timbermap
-        </Link>
-        <div>
-          <p className="text-white/40 text-xs tracking-widest uppercase mb-4">Geospatial AI Platform</p>
-          <h2 className="text-white text-3xl font-light leading-tight mb-6" style={{letterSpacing: '-0.02em'}}>
-            Intelligent analysis for<br />forest and land management
-          </h2>
-          <p className="text-white/50 text-sm font-light leading-relaxed max-w-sm">
-            Upload large rasters, run deep learning models on your imagery, 
-            and visualize results on an interactive map.
-          </p>
-        </div>
-        <p className="text-white/20 text-xs">© 2026 Timbermap</p>
-      </div>
-
-      {/* Right panel */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 lg:hidden">
-            <Link href="/" className="font-semibold text-[#2C5F45] text-lg tracking-wide">
-              Timbermap
-            </Link>
-          </div>
+      <div className="w-full max-w-sm">
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <p className="text-xs font-semibold text-[#6AA8A0] uppercase tracking-wide mb-1">Welcome back</p>
+          <h1 className="text-2xl font-light text-[#1A2624] mb-6" style={{letterSpacing: '-0.01em'}}>Sign in to Timbermap</h1>
           <SignIn
             path="/sign-in"
             routing="path"
@@ -38,16 +25,25 @@ export default function SignInPage() {
               elements: {
                 rootBox: 'w-full',
                 card: 'shadow-none bg-transparent p-0',
-                headerTitle: 'text-2xl font-light text-[#1C1C1C]',
-                headerSubtitle: 'text-gray-400 font-light',
-                formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white',
-                footerActionLink: 'text-[#2C5F45] hover:text-[#3D7A5A]',
+                header: 'hidden',
+                formButtonPrimary: 'bg-[#2C5F45] hover:bg-[#3D7A5A] text-white text-sm',
+                footerActionLink: 'text-[#3D7A72] hover:text-[#2A5750]',
+                socialButtonsBlockButton: 'border-gray-200 hover:bg-gray-50',
+                dividerLine: 'bg-gray-200',
+                dividerText: 'text-gray-400',
+                formFieldInput: 'focus:border-[#6AA8A0] focus:ring-[#6AA8A0]',
               }
             }}
           />
         </div>
+        <Link href="/" className="block text-center mt-6 text-sm text-[#6AA8A0] hover:text-[#A0CECC] transition-colors">
+          ← Back to timbermap.com
+        </Link>
       </div>
 
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+      `}</style>
     </div>
   )
 }
