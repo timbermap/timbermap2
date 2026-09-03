@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import requests as http_requests
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException, Response, Header
@@ -254,8 +255,10 @@ def thumbnail_image(image_id: str, clerk_id: str):
     try:
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob(f"users/{clerk_id}/thumbnails/{image_id}.jpg")
-        url = blob.generate_signed_url(version="v4", expiration=timedelta(hours=1), method="GET")
+        url = _cached_signed_url(
+            bucket, f"users/{clerk_id}/thumbnails/{image_id}.jpg",
+            expiration=timedelta(hours=1), cache_ttl=2700,
+        )
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -786,6 +789,28 @@ def download_all_outputs(job_id: str, clerk_id: str):
 
 # ── Layers ────────────────────────────────────────────────────────────────────
 
+# Signed URLs are valid 7 days, but generating a fresh one on every /layers
+# call means the query string (and therefore the browser cache key) changes
+# on every page load — so the same COG bytes get re-downloaded from scratch
+# every time the map opens. Cache the URL string itself for a while so
+# repeat loads within that window reuse the same URL and actually hit the
+# browser's HTTP cache. Per-instance only (no shared cache), which is fine:
+# it just needs to survive across a user's own repeat page loads.
+_SIGNED_URL_CACHE: dict[str, tuple[str, float]] = {}
+
+
+def _cached_signed_url(bucket, path: str, expiration=timedelta(days=7), cache_ttl: int = 3600) -> str:
+    now = time.time()
+    cached = _SIGNED_URL_CACHE.get(path)
+    if cached and cached[1] > now:
+        return cached[0]
+    url = bucket.blob(path).generate_signed_url(
+        version="v4", expiration=expiration, method="GET"
+    )
+    _SIGNED_URL_CACHE[path] = (url, now + cache_ttl)
+    return url
+
+
 @app.get("/layers/{clerk_id}")
 def get_layers(clerk_id: str):
     user_id = get_user_id(clerk_id)
@@ -803,10 +828,7 @@ def get_layers(clerk_id: str):
             try:
                 cog_subdir = "cogs_display" if img.get("has_display_cog") else "cogs"
                 cog_path = f"users/{clerk_id}/{cog_subdir}/{img['id']}.tif"
-                blob = bucket.blob(cog_path)
-                signed_url = blob.generate_signed_url(
-                    version="v4", expiration=timedelta(days=7), method="GET"
-                )
+                signed_url = _cached_signed_url(bucket, cog_path)
                 bbox = None
                 if all(img.get(k) is not None for k in ["bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy"]):
                     bbox = [
