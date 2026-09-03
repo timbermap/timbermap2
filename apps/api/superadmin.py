@@ -225,6 +225,23 @@ def clerk_user_by_email(email: str, _: str = Depends(require_superadmin)):
         "created_at": u.get("created_at"),
     }
 
+@router.post("/reconcile-clerk-id")
+def reconcile_clerk_id(old_clerk_id: str, new_clerk_id: str, _: str = Depends(require_superadmin)):
+    """Repoints an existing users row at its new prod-instance clerk_id,
+    preserving is_superadmin / account_id / everything else."""
+    conn = database.get_conn()
+    cur  = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE clerk_id = %s", (old_clerk_id,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        raise HTTPException(404, f"No user row with clerk_id={old_clerk_id}")
+    cur.execute("UPDATE users SET clerk_id = %s WHERE clerk_id = %s", (new_clerk_id, old_clerk_id))
+    conn.commit()
+    cur.execute("SELECT clerk_id, email, is_superadmin FROM users WHERE clerk_id = %s", (new_clerk_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return dict(row)
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 @router.get("/models")
