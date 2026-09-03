@@ -681,6 +681,16 @@ def run_model(req: RunModelRequest):
         if not check_model_permission(str(user_id), req.model_id):
             raise HTTPException(status_code=403, detail="No permission to run this model")
 
+        required_input = model.get("required_vector_input")
+        if isinstance(required_input, str):
+            try: required_input = json.loads(required_input)
+            except Exception: required_input = None
+        if required_input and not req.vector_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This model requires a {required_input.get('label', 'vector')} input",
+            )
+
         job_id = insert_job_ml(
             owner_id=str(user_id),
             model_id=req.model_id,
@@ -937,6 +947,7 @@ async def get_catalog_models(x_clerk_id: str = Header(None)):
             m.pipeline_type,
             COALESCE(m.output_types, '[]'::jsonb) AS output_types,
             COALESCE(m.is_free, false) AS is_free,
+            m.required_vector_input,
             EXISTS(
                 SELECT 1 FROM user_model_permissions um
                 JOIN users u ON u.id = um.user_id

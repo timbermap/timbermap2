@@ -19,6 +19,7 @@ type Model = {
   pipeline_type: string; version: string; is_active: boolean
   output_types: string[]; inference_config: Record<string,unknown>
   phase2_config: Record<string,unknown>
+  required_vector_input: Record<string,unknown> | null
   user_count: number; job_count: number; artifact_count: number
   artifacts?: Artifact[]
 }
@@ -255,7 +256,6 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
   const [models, setModels]       = useState<Model[]>([])
   const [loading, setLoading]     = useState(true)
   const [selected, setSelected]   = useState<Model | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
   const [saving, setSaving]       = useState(false)
   const [uploadKey, setUploadKey] = useState<string>('')
   const [uploading, setUploading] = useState(false)
@@ -270,11 +270,11 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
 
   useEffect(() => { fetchModels() }, [fetchModels])
 
-  // Form state
+  // Form state (edit-only — models are created via the models/ folder + DB flow, not this panel)
   const [form, setForm] = useState({
     name: '', slug: '', description: '', pipeline_type: 'blob_detection',
     version: '1.0', output_types: '["raster_cog","geojson","shapefile"]',
-    inference_config: '{}', phase2_config: '{}',
+    inference_config: '{}', phase2_config: '{}', required_vector_input: '',
   })
 
   function openEdit(m: Model) {
@@ -285,11 +285,12 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
       output_types: JSON.stringify(m.output_types || []),
       inference_config: JSON.stringify(m.inference_config || {}, null, 2),
       phase2_config: JSON.stringify(m.phase2_config || {}, null, 2),
+      required_vector_input: m.required_vector_input ? JSON.stringify(m.required_vector_input, null, 2) : '',
     })
-    setShowCreate(false)
   }
 
   async function handleSave() {
+    if (!selected) return
     setSaving(true)
     try {
       const body = {
@@ -297,11 +298,12 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
         output_types: JSON.parse(form.output_types),
         inference_config: JSON.parse(form.inference_config),
         phase2_config: JSON.parse(form.phase2_config),
+        required_vector_input: form.required_vector_input.trim() ? JSON.parse(form.required_vector_input) : null,
       }
-      const url    = selected ? `${api}/superadmin/models/${selected.id}` : `${api}/superadmin/models`
-      const method = selected ? 'PUT' : 'POST'
+      const url    = `${api}/superadmin/models/${selected.id}`
+      const method = 'PUT'
       await fetch(url, { method, headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      setSelected(null); setShowCreate(false); fetchModels()
+      setSelected(null); fetchModels()
     } catch (e) { alert('Save failed: ' + e) }
     finally { setSaving(false) }
   }
@@ -344,13 +346,6 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={() => { setShowCreate(true); setSelected(null); setForm({ name:'', slug:'', description:'', pipeline_type:'blob_detection', version:'1.0', output_types:'["raster_cog","geojson","shapefile"]', inference_config:'{}', phase2_config:'{}' }) }}
-          className="inline-flex items-center gap-2 bg-[#3D7A72] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#2A5750] transition-colors">
-          <PlusIcon />New model
-        </button>
-      </div>
-
       {/* Model list */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <table className="w-full text-sm">
@@ -393,15 +388,15 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
         </table>
       </div>
 
-      {/* Edit / Create form modal */}
-      {(selected || showCreate) && (
+      {/* Edit form modal — models are only created via the models/ folder + DB flow */}
+      {selected && (
         <div className="fixed inset-0 bg-black/30 flex items-start justify-center z-50 backdrop-blur-sm pt-10 pb-10 overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-100 mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-[#1C1C1C]">
-                {selected ? `Edit — ${selected.name}` : 'New model'}
+                Edit — {selected.name}
               </h2>
-              <button onClick={() => { setSelected(null); setShowCreate(false) }}
+              <button onClick={() => setSelected(null)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"><XIcon /></button>
             </div>
 
@@ -455,6 +450,21 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
                 </div>
               ))}
 
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">
+                  required_vector_input (JSON, empty = not required)
+                </label>
+                <p className="text-xs text-gray-300 mb-1.5">
+                  Set this when the model needs a specific vector as a real input (not just an optional AOI
+                  crop) — e.g. {'{"label": "Shapefile de rodales", "help_text": "...", "required_fields": ["RODAL"]}'}.
+                  The Run form will show it as a required field instead of the generic optional AOI picker.
+                </p>
+                <textarea value={form.required_vector_input} rows={3}
+                  placeholder="(leave empty — this model doesn't require a specific vector input)"
+                  onChange={e => setForm(p => ({ ...p, required_vector_input: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-[#6AA8A0] transition-all resize-none" />
+              </div>
+
               {/* Artifacts section — only for existing models */}
               {selected && (
                 <div>
@@ -505,9 +515,9 @@ function ModelsTab({ clerkId, api }: { clerkId: string; api: string }) {
             <div className="flex gap-2 px-6 pb-5">
               <button onClick={handleSave} disabled={saving}
                 className="flex-1 bg-[#3D7A72] text-white py-2.5 rounded-xl text-sm font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-50 shadow-sm">
-                {saving ? 'Saving...' : selected ? 'Save changes' : 'Create model'}
+                {saving ? 'Saving...' : 'Save changes'}
               </button>
-              <button onClick={() => { setSelected(null); setShowCreate(false) }}
+              <button onClick={() => setSelected(null)}
                 className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
                 Cancel
               </button>

@@ -542,12 +542,13 @@ def superadmin_update_model(model_id: str, data: dict):
     fields = []
     values = []
     allowed = ['name', 'description', 'version', 'pipeline_type',
-               'inference_config', 'phase2_config', 'output_types', 'is_active', 'active']
+               'inference_config', 'phase2_config', 'output_types',
+               'required_vector_input', 'is_active', 'active']
     for key in allowed:
         if key in data:
             fields.append(f"{key} = %s")
             val = data[key]
-            if key in ('inference_config', 'phase2_config', 'output_types') and isinstance(val, dict):
+            if key in ('inference_config', 'phase2_config', 'output_types', 'required_vector_input') and isinstance(val, dict):
                 val = json.dumps(val)
             values.append(val)
     if not fields:

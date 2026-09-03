@@ -3,6 +3,7 @@ import { useUser } from '@clerk/nextjs'
 import { useState, useEffect, useCallback } from 'react'
 import Spinner from '@/components/Spinner'
 
+type RequiredVectorInput = { label: string; help_text?: string; required_fields?: string[] }
 type Model = {
   id: string
   name: string
@@ -12,6 +13,7 @@ type Model = {
   is_free: boolean
   has_access: boolean
   is_visible: boolean
+  required_vector_input: RequiredVectorInput | null
 }
 type ImageFile = {
   id: string; filename: string; status: string
@@ -116,18 +118,19 @@ export default function ModelsPage() {
 
   useEffect(() => { if (isLoaded && user) fetchAll() }, [isLoaded, user, fetchAll])
 
-  async function handleRun(modelId: string) {
+  async function handleRun(model: Model) {
     if (!run.imageId) return
     setRun(r => ({ ...r, running: true, error: null, jobId: null }))
     try {
+      const usesVector = model.required_vector_input ? true : run.aoiMode === 'vector'
       const res = await fetch(`${API}/jobs/run-model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clerk_id: user!.id, model_id: modelId,
+          clerk_id: user!.id, model_id: model.id,
           image_id: run.imageId,
-          vector_id: run.aoiMode === 'vector' ? (run.vectorId || null) : null,
-          params: run.aoiMode === 'geojson' && run.aoiGeojson
+          vector_id: usesVector ? (run.vectorId || null) : null,
+          params: !model.required_vector_input && run.aoiMode === 'geojson' && run.aoiGeojson
             ? { aoi_geojson: JSON.parse(run.aoiGeojson) }
             : {},
         }),
@@ -262,76 +265,101 @@ export default function ModelsPage() {
                 )}
               </div>
 
-              {/* AOI */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
-                  <span className="text-[#6AA8A0]"><MapPinIcon /></span>
-                  AOI
-                  <span className="text-gray-300 font-normal">(optional)</span>
-                </label>
-
-                <div className="flex gap-1 mb-2">
-                  {([
-                    { key: 'none',    label: 'None' },
-                    { key: 'vector',  label: 'Shapefile' },
-                    { key: 'geojson', label: 'GeoJSON' },
-                  ] as const).map(m => (
-                    <button key={m.key}
-                      onClick={() => setRun(r => ({ ...r, aoiMode: m.key }))}
-                      className={`cursor-pointer text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
-                        run.aoiMode === m.key
-                          ? 'bg-[#3D7A72] text-white border-[#3D7A72]'
-                          : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                      }`}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-
-                {run.aoiMode === 'vector' && (
-                  <select
-                    value={run.vectorId}
-                    onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
-                    <option value="">Select shapefile...</option>
-                    {vectors.map(vec => (
-                      <option key={vec.id} value={vec.id}>{vec.filename}</option>
-                    ))}
-                  </select>
-                )}
-
-                {run.aoiMode === 'geojson' && (
-                  <div>
-                    <textarea
-                      value={run.aoiGeojson}
-                      onChange={e => setRun(r => ({ ...r, aoiGeojson: e.target.value }))}
-                      placeholder={'Paste GeoJSON here...\n{"type":"FeatureCollection","features":[...]}'}
-                      rows={4}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all resize-none" />
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <p className="text-xs text-gray-400 flex-1">
-                        Paste any GeoJSON — Feature, FeatureCollection, or Geometry
-                      </p>
-                      <button
-                        onClick={() => {
-                          const stored = localStorage.getItem('map_drawn_aoi')
-                          if (stored) setRun(r => ({ ...r, aoiGeojson: stored }))
-                          else alert('No drawn AOI found. Draw a polygon on the Map page first.')
-                        }}
-                        className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] font-medium whitespace-nowrap">
-                        Use drawn AOI →
-                      </button>
+              {/* Required vector input (model-specific, e.g. rodales shapefile) OR generic optional AOI */}
+              {model.required_vector_input ? (
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
+                    <span className="text-[#6AA8A0]"><MapPinIcon /></span>
+                    {model.required_vector_input.label}
+                    <span className="text-red-400">*</span>
+                  </label>
+                  {vectors.length === 0 ? (
+                    <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                      <WarnIcon />
+                      No vectors uploaded. Upload one first.
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <select
+                      value={run.vectorId}
+                      onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
+                      <option value="">Select shapefile...</option>
+                      {vectors.map(vec => (
+                        <option key={vec.id} value={vec.id}>{vec.filename}</option>
+                      ))}
+                    </select>
+                  )}
+                  {model.required_vector_input.help_text && (
+                    <p className="flex items-center gap-1.5 text-xs text-amber-600 mt-1.5">
+                      <WarnIcon />
+                      {model.required_vector_input.help_text}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-2">
+                    <span className="text-[#6AA8A0]"><MapPinIcon /></span>
+                    AOI
+                    <span className="text-gray-300 font-normal">(optional)</span>
+                  </label>
 
-                {model.pipeline_type === 'hough_lines' && run.aoiMode !== 'none' && (
-                  <p className="flex items-center gap-1.5 text-xs text-amber-600 mt-1.5">
-                    <WarnIcon />
-                    Shapefile must include CD_USO_SOLO, CD_SGF and RODAL for stand statistics.
-                  </p>
-                )}
-              </div>
+                  <div className="flex gap-1 mb-2">
+                    {([
+                      { key: 'none',    label: 'None' },
+                      { key: 'vector',  label: 'Shapefile' },
+                      { key: 'geojson', label: 'GeoJSON' },
+                    ] as const).map(m => (
+                      <button key={m.key}
+                        onClick={() => setRun(r => ({ ...r, aoiMode: m.key }))}
+                        className={`cursor-pointer text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
+                          run.aoiMode === m.key
+                            ? 'bg-[#3D7A72] text-white border-[#3D7A72]'
+                            : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                        }`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {run.aoiMode === 'vector' && (
+                    <select
+                      value={run.vectorId}
+                      onChange={e => setRun(r => ({ ...r, vectorId: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all cursor-pointer">
+                      <option value="">Select shapefile...</option>
+                      {vectors.map(vec => (
+                        <option key={vec.id} value={vec.id}>{vec.filename}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {run.aoiMode === 'geojson' && (
+                    <div>
+                      <textarea
+                        value={run.aoiGeojson}
+                        onChange={e => setRun(r => ({ ...r, aoiGeojson: e.target.value }))}
+                        placeholder={'Paste GeoJSON here...\n{"type":"FeatureCollection","features":[...]}'}
+                        rows={4}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-[#6AA8A0] focus:ring-2 focus:ring-[#6AA8A0]/10 transition-all resize-none" />
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <p className="text-xs text-gray-400 flex-1">
+                          Paste any GeoJSON — Feature, FeatureCollection, or Geometry
+                        </p>
+                        <button
+                          onClick={() => {
+                            const stored = localStorage.getItem('map_drawn_aoi')
+                            if (stored) setRun(r => ({ ...r, aoiGeojson: stored }))
+                            else alert('No drawn AOI found. Draw a polygon on the Map page first.')
+                          }}
+                          className="cursor-pointer text-xs text-[#6AA8A0] hover:text-[#3D7A72] font-medium whitespace-nowrap">
+                          Use drawn AOI →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {thisError && (
@@ -353,8 +381,9 @@ export default function ModelsPage() {
             )}
 
             <button
-              onClick={() => handleRun(model.id)}
-              disabled={!run.imageId || isThisRunning || (run.aoiMode === 'geojson' && !run.aoiGeojson)}
+              onClick={() => handleRun(model)}
+              disabled={!run.imageId || isThisRunning
+                || (model.required_vector_input ? !run.vectorId : (run.aoiMode === 'geojson' && !run.aoiGeojson))}
               className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#3D7A72] text-white rounded-xl text-xs font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
               {isThisRunning ? <><SpinnerIcon />Queuing...</> : <><PlayIcon />Run model</>}
             </button>

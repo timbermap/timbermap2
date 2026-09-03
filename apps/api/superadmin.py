@@ -96,6 +96,7 @@ class UpdateModelRequest(BaseModel):
     version: Optional[str] = None; pipeline_type: Optional[str] = None
     inference_config: Optional[dict] = None; phase2_config: Optional[dict] = None
     output_types: Optional[list] = None; is_active: Optional[bool] = None
+    required_vector_input: Optional[dict] = None
 
 class ArtifactConfirmRequest(BaseModel):
     artifact_key: str; gcs_path: str; file_size: int = 0; checksum: str = ""
