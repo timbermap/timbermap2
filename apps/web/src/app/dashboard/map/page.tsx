@@ -83,10 +83,10 @@ const BasemapIcons = {
 }
 
 const BASEMAPS: BasemapDef[] = [
-  { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
-    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri', 16) },
   { id: 'satellite', label: 'Satellite', icon: BasemapIcons.Satellite,
     style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri', 18) },
+  { id: 'dark', label: 'Dark', icon: BasemapIcons.Dark,
+    style: makeBasemap('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', '© Esri', 16) },
   { id: 'osm', label: 'Streets', icon: BasemapIcons.Streets,
     style: makeBasemap('https://tile.openstreetmap.org/{z}/{x}/{y}.png', '© OpenStreetMap contributors', 19) },
   { id: 'terrain', label: 'Terrain', icon: BasemapIcons.Terrain,
@@ -358,7 +358,7 @@ function MapPageInner() {
 
   const [layers,      setLayers]      = useState<Layer[]>([])
   const [mlOutputs,   setMlOutputs]   = useState<MLOutput[]>([])
-  const [basemap,     setBasemap]     = useState('dark')
+  const [basemap,     setBasemap]     = useState('satellite')
   const [mapReady,    setMapReady]    = useState(false)
   const [layersLoading, setLayersLoading] = useState(false)
   const [clientReady, setClientReady] = useState(false)
@@ -477,7 +477,7 @@ function MapPageInner() {
     maplibregl.addProtocol('cog', cogProtocol)
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: BASEMAPS.find(b => b.id === 'dark')!.style,
+      style: BASEMAPS.find(b => b.id === 'satellite')!.style,
       center: [-60, -35],
       zoom: 4,
     })
