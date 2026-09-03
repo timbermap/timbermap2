@@ -885,6 +885,7 @@ def get_account_info(clerk_id: str):
         "account_plan": me["plan"],
         "plan_expires_at": me["plan_expires_at"].isoformat() if me["plan_expires_at"] else None,
         "is_organization": me["clerk_org_id"] is not None,
+        "clerk_org_id": me["clerk_org_id"],
         "storage_limit_gb": storage_limit_gb,
         "weekly_job_limit": weekly_job_limit,
         "has_custom_limits": me["storage_limit_gb_override"] is not None or me["weekly_job_limit_override"] is not None,

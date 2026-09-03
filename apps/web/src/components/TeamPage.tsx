@@ -1,5 +1,5 @@
 'use client'
-import { useUser, useOrganization, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
+import { useUser, useOrganization, useOrganizationList, OrganizationProfile, CreateOrganization } from '@clerk/nextjs'
 import { useState, useEffect, useCallback } from 'react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'https://timbermap-api-tjrp7tcqaa-uc.a.run.app'
@@ -9,6 +9,7 @@ type AccountModel = { id: string; name: string; pipeline_type: string }
 type AccountInfo = {
   org_role: string | null
   is_organization: boolean
+  clerk_org_id: string | null
   teammates: Teammate[]
   account_models: AccountModel[]
   teammate_models: Record<string, string[]>
@@ -20,6 +21,7 @@ const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 
 export default function TeamPage({ compact = false }: { compact?: boolean }) {
   const { user, isLoaded } = useUser()
   const { organization } = useOrganization()
+  const { setActive, isLoaded: orgListLoaded } = useOrganizationList()
   const [info, setInfo]     = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState<string | null>(null)
@@ -34,6 +36,17 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
   }, [user])
 
   useEffect(() => { if (isLoaded && user) load() }, [isLoaded, user, load])
+  // Being a member of a team (per our DB) and having that org "active" in
+  // the current Clerk session are different things — Clerk doesn't always
+  // auto-activate it (e.g. right after signing back in), and
+  // <OrganizationProfile> hard-crashes if rendered with no active org. If
+  // our DB says there should be one but Clerk's client doesn't have it
+  // active yet, activate it ourselves before we ever try to render that.
+  useEffect(() => {
+    if (!orgListLoaded || !setActive) return
+    if (!info?.clerk_org_id || organization?.id === info.clerk_org_id) return
+    setActive({ organization: info.clerk_org_id })
+  }, [orgListLoaded, setActive, info?.clerk_org_id, organization?.id])
   // Clerk sets the newly created org as active on its own client-side state
   // immediately — no navigation needed, just re-check our own DB once that
   // happens (the webhook that syncs it usually beats this by a beat, but
@@ -215,9 +228,15 @@ export default function TeamPage({ compact = false }: { compact?: boolean }) {
         <div className="p-5 pb-0">
           <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Invite &amp; manage members</p>
         </div>
-        <OrganizationProfile
-          appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
-        />
+        {organization ? (
+          <OrganizationProfile
+            appearance={{ elements: { rootBox: 'w-full', card: 'shadow-none border-0 w-full' } }}
+          />
+        ) : (
+          <div className="flex items-center gap-2 text-gray-400 py-10 justify-center text-sm">
+            <SpinIcon />Activating your team...
+          </div>
+        )}
       </div>
     </div>
   )
