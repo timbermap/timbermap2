@@ -952,9 +952,12 @@ def _do_analyze_gaps(job: GapDetectionJob):
 
 
 @app.post("/analyze/gaps")
-async def analyze_gaps(job: GapDetectionJob, background_tasks: BackgroundTasks):
-    """Accept immediately — Cloud Tasks gets 200 right away, no 30-min timeout."""
-    update_job(job.job_id, "running", "Accepted — processing in background...")
-    publish_status(job.job_id, "running", "Accepted — processing in background...")
-    background_tasks.add_task(_do_analyze_gaps, job)
-    return {"status": "accepted"}
+async def analyze_gaps(job: GapDetectionJob):
+    """Runs synchronously within the request — see the identical note on
+    /transform above. BackgroundTasks here let Cloud Run scale the instance
+    down the moment the "accepted" response was sent, silently killing gap
+    detection mid-run and leaving the job stuck in "running" forever (this
+    is exactly what happened — same bug, reintroduced). Cloud Tasks'
+    dispatch_deadline (enqueue_raster_analysis) covers this window."""
+    await run_in_threadpool(_do_analyze_gaps, job)
+    return {"status": "done"}

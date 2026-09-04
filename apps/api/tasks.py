@@ -225,6 +225,9 @@ def enqueue_raster_analysis(job_id: str, model_id: str, image_id: str, params: d
                     "audience": worker_url,
                 },
             },
+            # /analyze/gaps now runs synchronously and can take a while on
+            # large rasters — same reasoning as enqueue_raster_transform.
+            "dispatch_deadline": {"seconds": 1800},
         }
 
         client.create_task(parent=parent, task=task)
