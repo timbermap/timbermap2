@@ -379,7 +379,7 @@ export default function ImagesPage() {
   }
   function displayBands(n: number | null) {
     if (!n) return '—'
-    return Math.min(n, 3)
+    return n
   }
 
   const statusBadge: Record<string, string> = {
