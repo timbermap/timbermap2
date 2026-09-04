@@ -763,6 +763,53 @@ def _download_vector_to_shp(gcs_path: str, tmpdir: str, job_id: str, target_epsg
     return out_shp
 
 
+def _gaps_geojson_to_shapefile(geojson_path: str, shp_path: str, epsg: int = 4326) -> None:
+    """Converts the gap-polygon GeoJSON (already in EPSG:4326) to an ESRI
+    Shapefile with area_m2/area_ha fields — the GIS-ready deliverable
+    (QGIS/ArcGIS) alongside the GeoJSON and the density-visualization raster."""
+    import json as _json
+    from osgeo import ogr, osr
+    from pathlib import Path as _Path
+
+    with open(geojson_path) as f:
+        data = _json.load(f)
+
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    if _Path(shp_path).exists():
+        driver.DeleteDataSource(shp_path)
+
+    ds    = driver.CreateDataSource(shp_path)
+    srs   = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+    layer = ds.CreateLayer("gaps", srs, ogr.wkbMultiPolygon)
+    layer.CreateField(ogr.FieldDefn("area_m2", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("area_ha", ogr.OFTReal))
+    feat_defn = layer.GetLayerDefn()
+
+    for feature in data.get("features", []):
+        props = feature.get("properties") or {}
+        geom  = ogr.CreateGeometryFromJson(_json.dumps(feature["geometry"]))
+        feat  = ogr.Feature(feat_defn)
+        feat.SetGeometry(geom)
+        feat.SetField("area_m2", float(props.get("area_m2") or 0))
+        feat.SetField("area_ha", float(props.get("area_ha") or 0))
+        layer.CreateFeature(feat)
+
+    ds.Destroy()
+
+
+def _zip_shapefile(shp_path: str, zip_path: str) -> None:
+    """Zips the .shp sidecar files (.shp/.shx/.dbf/.prj) into one archive."""
+    import zipfile
+    from pathlib import Path as _Path
+    stem = _Path(shp_path).with_suffix("")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for ext in (".shp", ".shx", ".dbf", ".prj"):
+            p = stem.with_suffix(ext)
+            if p.exists():
+                zf.write(p, arcname=p.name)
+
+
 class GapDetectionJob(BaseModel):
     job_id: str
     image_id: str
@@ -849,10 +896,18 @@ def _do_analyze_gaps(job: GapDetectionJob):
                 update_job_fn=_update,
             )
 
+            # Build the GIS-ready shapefile deliverable alongside the GeoJSON
+            update_job(job.job_id, "running", "Writing shapefile...")
+            shp_path = os.path.join(tmpdir, "gaps.shp")
+            zip_path = os.path.join(tmpdir, "gaps_shapefile.zip")
+            _gaps_geojson_to_shapefile(geojson_path, shp_path, epsg=4326)
+            _zip_shapefile(shp_path, zip_path)
+
             # Upload outputs to GCS
             update_job(job.job_id, "running", "Uploading results...")
             upload_to_gcs(prob_cog_path, f"jobs/{job.job_id}/gaps_probability.tif")
             upload_to_gcs(geojson_path,  f"jobs/{job.job_id}/gaps.geojson")
+            upload_to_gcs(zip_path,      f"jobs/{job.job_id}/gaps_shapefile.zip")
 
             # Register outputs in DB
             conn = get_conn()
@@ -860,11 +915,13 @@ def _do_analyze_gaps(job: GapDetectionJob):
             cur.execute("""
                 INSERT INTO job_outputs (job_id, output_type, label, gcs_path, file_size_bytes, is_visualizable, layer_type)
                 VALUES
-                  (%s, 'raster_cog', 'Gap probability', %s, %s, true,  'raster'),
-                  (%s, 'geojson',    'Gap polygons',    %s, %s, true,  'vector')
+                  (%s, 'raster_cog', 'Gap probability map',              %s, %s, true,  'raster'),
+                  (%s, 'geojson',    'Detected gap boundaries (GeoJSON)', %s, %s, true,  'vector'),
+                  (%s, 'shapefile',  'Detected gap boundaries (Shapefile)', %s, %s, false, NULL)
             """, (
-                job.job_id, f"jobs/{job.job_id}/gaps_probability.tif", os.path.getsize(prob_cog_path),
-                job.job_id, f"jobs/{job.job_id}/gaps.geojson",         os.path.getsize(geojson_path),
+                job.job_id, f"jobs/{job.job_id}/gaps_probability.tif",  os.path.getsize(prob_cog_path),
+                job.job_id, f"jobs/{job.job_id}/gaps.geojson",          os.path.getsize(geojson_path),
+                job.job_id, f"jobs/{job.job_id}/gaps_shapefile.zip",    os.path.getsize(zip_path),
             ))
             conn.commit()
             cur.close()

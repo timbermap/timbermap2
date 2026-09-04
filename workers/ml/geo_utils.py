@@ -218,12 +218,19 @@ PATCH para geo_utils.py — agregar esta función junto a extract_vector_to_shp
 """
 
 def points_to_density_cog(features: list, ref_raster: str, job_id: str,
-                          resolution: float | None = None) -> str:
+                          resolution: float | None = None,
+                          cell_size_m: float = 15.0) -> str:
     """
     Rasterizes point features into a density COG.
     Each pixel value = number of points falling in that cell.
-    resolution: pixel size in same CRS units as ref_raster. None = use ref_raster resolution.
-    Returns path to COG GeoTIFF.
+
+    Cell size defaults to cell_size_m (real-world meters, converted to the
+    raster's own CRS units under the hood) rather than the source raster's
+    native pixel size — at native resolution (often <10cm) almost every
+    cell holds 0 or 1 point, which renders as near-binary noise instead of
+    a readable density surface. ~15m cells give each cell a meaningful
+    count while still resolving individual clusters at a useful zoom.
+    Pass `resolution` directly (in the raster's own CRS units) to override.
     """
     import subprocess
     import tempfile
@@ -244,8 +251,21 @@ def points_to_density_cog(features: list, ref_raster: str, job_id: str,
         bottom = src.bounds.bottom
         right  = src.bounds.right
         top    = src.bounds.top
-        res    = resolution or abs(src.transform.a)
         epsg   = src.crs.to_epsg() if src.crs else 4326
+
+        if resolution is not None:
+            res = resolution
+        elif src.crs and src.crs.is_geographic:
+            # Convert the desired meter cell size to degrees at this
+            # raster's latitude (same approximation used elsewhere for
+            # geographic-CRS pixel-area math).
+            import math
+            center_lat = bottom + (top - bottom) / 2
+            meter_per_deg_lat = 111320.0
+            meter_per_deg_lon = 111320.0 * math.cos(math.radians(center_lat))
+            res = cell_size_m / max(meter_per_deg_lat, meter_per_deg_lon)
+        else:
+            res = cell_size_m
 
     raw_tif = f"/tmp/{job_id}_density_raw.tif"
     cog_tif = f"/tmp/{job_id}_density_cog.tif"
