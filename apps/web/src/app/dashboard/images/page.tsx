@@ -101,6 +101,10 @@ export default function ImagesPage() {
   // Delete all
   const [confirmAll, setConfirmAll]   = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
+  // Bulk select (current page)
+  const [selected, setSelected]           = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting]   = useState(false)
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
   const [previewId, setPreviewId] = useState<string | null>(null)
   const fetchedThumbIds = useRef<Set<string>>(new Set())
@@ -306,6 +310,40 @@ export default function ImagesPage() {
     const res = await fetch(`${API}/images/${imageId}/download?clerk_id=${user.id}`)
     const data = await res.json()
     if (data.url) { const a = document.createElement('a'); a.href = data.url; a.download = ''; a.click() }
+  }
+
+  function toggleSelected(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  function toggleSelectAllOnPage() {
+    setSelected(prev => {
+      const pagedIds = paged.map(i => i.id)
+      const allSelected = pagedIds.every(id => prev.has(id))
+      const next = new Set(prev)
+      if (allSelected) pagedIds.forEach(id => next.delete(id))
+      else pagedIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+  async function handleBulkDownload() {
+    const ids = images.filter(i => selected.has(i.id) && i.status === 'ready' && !activeImageIds.has(i.id)).map(i => i.id)
+    for (const id of ids) await handleDownload(id)
+  }
+  async function handleBulkDelete() {
+    if (!user) return
+    setBulkDeleting(true)
+    try {
+      const ids = images.filter(i => selected.has(i.id) && !activeImageIds.has(i.id)).map(i => i.id)
+      await Promise.all(ids.map(id =>
+        fetch(`${API}/images/${id}?clerk_id=${user.id}`, { method: 'DELETE' }).catch(() => {})
+      ))
+      setSelected(new Set())
+      await fetchData()
+    } finally { setBulkDeleting(false); setConfirmBulkDelete(false) }
   }
 
   function viewOnMap(img: ImageFile) {
@@ -607,11 +645,61 @@ export default function ImagesPage() {
         </div>
       ) : (
         <>
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="mb-3 flex items-center gap-3 bg-[#1A2624] text-white rounded-xl px-4 py-2.5 text-sm">
+              <span className="font-semibold">{selected.size} selected</span>
+              <div className="flex-1" />
+              <button onClick={handleBulkDownload}
+                className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
+                <DownloadIcon />Download
+              </button>
+              <button onClick={() => setConfirmBulkDelete(true)}
+                className="inline-flex items-center gap-1.5 bg-rose-400/20 hover:bg-rose-400/30 text-rose-200 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
+                <TrashIcon />Delete
+              </button>
+              <button onClick={() => setSelected(new Set())} title="Clear selection"
+                className="text-white/50 hover:text-white transition-colors cursor-pointer px-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {/* Bulk delete confirm */}
+          {confirmBulkDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-4 text-rose-400">
+                  <TrashIcon />
+                </div>
+                <h3 className="font-semibold text-gray-900 text-center mb-1">Delete {selected.size} image{selected.size !== 1 ? 's' : ''}?</h3>
+                <p className="text-sm text-gray-500 text-center mb-6">This will permanently delete the selected files (COGs, thumbnails, storage). Images with an active job are skipped.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmBulkDelete(false)} disabled={bulkDeleting}
+                    className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                    className="flex-1 px-4 py-2.5 bg-rose-400 text-white rounded-xl text-sm hover:bg-rose-500 transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-default">
+                    {bulkDeleting ? <><SpinIcon />Deleting...</> : 'Delete selected'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="px-4 py-3 w-8">
+                      <input type="checkbox" checked={paged.length > 0 && paged.every(i => selected.has(i.id))}
+                        onChange={toggleSelectAllOnPage}
+                        className="cursor-pointer accent-[#3D7A72]" />
+                    </th>
                     <th className="text-left px-4 py-3 text-xs font-medium tracking-widest uppercase text-gray-400 w-14">Preview</th>
                     {([
                       { key: 'filename',   label: 'Filename' },
@@ -637,7 +725,11 @@ export default function ImagesPage() {
                   {paged.map(img => {
                     const isActive = activeImageIds.has(img.id)
                     return (
-                      <tr key={img.id} className={`border-b border-gray-50 transition-colors duration-700 ${highlighted.has(img.id) ? 'bg-[#EEF7F6]' : 'hover:bg-[#F4F9F9]'}`}>
+                      <tr key={img.id} className={`border-b border-gray-50 transition-colors duration-700 ${highlighted.has(img.id) ? 'bg-[#EEF7F6]' : selected.has(img.id) ? 'bg-[#F4F9F9]' : 'hover:bg-[#F4F9F9]'}`}>
+                        <td className="px-4 py-3">
+                          <input type="checkbox" checked={selected.has(img.id)} onChange={() => toggleSelected(img.id)}
+                            className="cursor-pointer accent-[#3D7A72]" />
+                        </td>
                         {/* Thumbnail column */}
                         <td className="px-4 py-3">
                           {thumbnailUrls[img.id] ? (
