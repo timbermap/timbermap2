@@ -363,13 +363,23 @@ export default function ModelsPage() {
             </div>
           )}
 
-          <button
-            onClick={() => handleRun(model)}
-            disabled={!run.imageId || isThisRunning
-              || (model.required_vector_input ? !run.vectorId : (run.aoiMode === 'geojson' && !run.aoiGeojson))}
-            className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#3D7A72] text-white rounded-xl text-xs font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-            {isThisRunning ? <><SpinnerIcon />Queuing...</> : <><PlayIcon />Run model</>}
-          </button>
+          {/* Hidden once clicked — the "Job queued" message above is the
+              only feedback needed, and keeping the button around invites a
+              second (redundant) click while the first request is in flight. */}
+          {!isThisRunning && !thisJobId && (
+            <button
+              onClick={() => handleRun(model)}
+              disabled={!run.imageId
+                || (model.required_vector_input ? !run.vectorId : (run.aoiMode === 'geojson' && !run.aoiGeojson))}
+              className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-[#3D7A72] text-white rounded-xl text-xs font-medium hover:bg-[#2A5750] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+              <PlayIcon />Run model
+            </button>
+          )}
+          {isThisRunning && (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#EEF7F6] text-[#3D7A72] rounded-xl text-xs font-medium">
+              <SpinnerIcon />Queuing...
+            </div>
+          )}
         </div>
       </div>
     )
