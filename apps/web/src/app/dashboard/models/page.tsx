@@ -116,11 +116,18 @@ export default function ModelsPage() {
   useEffect(() => { if (isLoaded && user) fetchAll() }, [isLoaded, user, fetchAll])
 
   // Default to the first active model once the list loads, so the run
-  // panel always has something to show instead of starting empty.
+  // panel always has something to show instead of starting empty. Must
+  // also seed `run.modelId` to match — otherwise isThisRunning/thisJobId
+  // (both keyed on run.modelId === model.id) never match this model, so
+  // running it silently shows no spinner, no "queued" confirmation, and
+  // the button never hides, which looks exactly like "nothing happened."
   useEffect(() => {
     if (selected) return
     const active = allModels.filter(m => m.has_access && m.is_visible)
-    if (active.length > 0) setSelected(active[0].id)
+    if (active.length > 0) {
+      setSelected(active[0].id)
+      setRun(r => ({ ...r, modelId: active[0].id }))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModels])
 
