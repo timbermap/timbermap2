@@ -115,22 +115,6 @@ export default function ModelsPage() {
 
   useEffect(() => { if (isLoaded && user) fetchAll() }, [isLoaded, user, fetchAll])
 
-  // Default to the first active model once the list loads, so the run
-  // panel always has something to show instead of starting empty. Must
-  // also seed `run.modelId` to match — otherwise isThisRunning/thisJobId
-  // (both keyed on run.modelId === model.id) never match this model, so
-  // running it silently shows no spinner, no "queued" confirmation, and
-  // the button never hides, which looks exactly like "nothing happened."
-  useEffect(() => {
-    if (selected) return
-    const active = allModels.filter(m => m.has_access && m.is_visible)
-    if (active.length > 0) {
-      setSelected(active[0].id)
-      setRun(r => ({ ...r, modelId: active[0].id }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allModels])
-
   async function handleRun(model: Model) {
     if (!run.imageId) return
     setRun(r => ({ ...r, running: true, error: null, jobId: null }))
@@ -450,10 +434,24 @@ export default function ModelsPage() {
               })}
             </div>
 
-            {/* ── Run panel for the selected model ── */}
+            {/* ── Run panel — placeholder until a model is picked, so the
+                first model in the list doesn't read as "the" model ── */}
             {(() => {
-              const model = activeModels.find(m => m.id === selected) || activeModels[0]
-              return model ? <RunPanel model={model} /> : null
+              const model = activeModels.find(m => m.id === selected)
+              if (model) return <RunPanel model={model} />
+              return (
+                <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 py-16 px-8 flex flex-col items-center text-center gap-2.5">
+                  <div className="w-11 h-11 rounded-2xl bg-[#EEF7F6] flex items-center justify-center text-[#3D7A72] mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <p className="text-sm font-semibold text-gray-700">Select a model to get started</p>
+                  <p className="text-xs text-gray-400 max-w-[280px] leading-relaxed">
+                    Pick one from the list on the left — you&apos;ll see its description and be able to choose an image to run it on.
+                  </p>
+                </div>
+              )
             })()}
           </div>
         )}
