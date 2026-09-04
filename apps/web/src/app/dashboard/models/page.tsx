@@ -347,10 +347,17 @@ export default function ModelsPage() {
               <div className="flex items-center gap-2 text-[#3D7A72] text-xs font-medium">
                 <CheckIcon />Job queued successfully
               </div>
-              <a href="/dashboard/jobs"
-                className="inline-flex items-center gap-1 text-xs text-[#3D7A72] hover:underline font-medium cursor-pointer">
-                View in Jobs <ArrowRightIcon />
-              </a>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setRun({ modelId: model.id, imageId: '', vectorId: '', aoiMode: 'none', aoiGeojson: '', running: false, jobId: null, error: null })}
+                  className="cursor-pointer inline-flex items-center gap-1 text-xs text-[#3D7A72] hover:underline font-medium">
+                  <PlayIcon />New process
+                </button>
+                <a href="/dashboard/jobs"
+                  className="inline-flex items-center gap-1 text-xs text-[#3D7A72] hover:underline font-medium cursor-pointer">
+                  View in Jobs <ArrowRightIcon />
+                </a>
+              </div>
             </div>
           )}
 
